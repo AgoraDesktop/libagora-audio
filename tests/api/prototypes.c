@@ -251,6 +251,23 @@ static OSStatus (*p_AudioQueueSetParameter)(AudioQueueRef _Nonnull, AudioQueuePa
 static OSStatus (*p_AudioQueueGetParameter)(AudioQueueRef _Nonnull, AudioQueueParameterID,
                                             AudioQueueParameterValue * _Nonnull) = AudioQueueGetParameter;
 
+/* The processing tap: created on a stopped queue, and its two service doors valid only inside its callback. */
+static OSStatus (*p_AudioQueueProcessingTapNew)(AudioQueueRef _Nonnull, AudioQueueProcessingTapCallback _Nonnull,
+                                                void * _Nullable, AudioQueueProcessingTapFlags,
+                                                UInt32 * _Nonnull, AudioStreamBasicDescription * _Nonnull,
+                                                AudioQueueProcessingTapRef _Nullable * _Nonnull)
+    = AudioQueueProcessingTapNew;
+static OSStatus (*p_AudioQueueProcessingTapDispose)(AudioQueueProcessingTapRef _Nonnull)
+    = AudioQueueProcessingTapDispose;
+static OSStatus (*p_AudioQueueProcessingTapGetSourceAudio)(AudioQueueProcessingTapRef _Nonnull, UInt32,
+                                                            AudioTimeStamp * _Nonnull,
+                                                            AudioQueueProcessingTapFlags * _Nonnull,
+                                                            UInt32 * _Nonnull, AudioBufferList * _Nonnull)
+    = AudioQueueProcessingTapGetSourceAudio;
+static OSStatus (*p_AudioQueueProcessingTapGetQueueTime)(AudioQueueProcessingTapRef _Nonnull, Float64 * _Nonnull,
+                                                          UInt32 * _Nonnull)
+    = AudioQueueProcessingTapGetQueueTime;
+
 /* --- AudioToolbox/AudioServices.h ------------------------------------------ */
 static OSStatus (*p_AudioServicesCreateSystemSoundID)(CFURLRef _Nonnull, SystemSoundID * _Nonnull)
     = AudioServicesCreateSystemSoundID;
@@ -367,6 +384,8 @@ int main(void)
 		(void *)p_AudioQueueFreeBuffer, (void *)p_AudioQueueGetProperty,
 		(void *)p_AudioQueueSetProperty, (void *)p_AudioQueueSetParameter,
 		(void *)p_AudioQueueGetParameter,
+		(void *)p_AudioQueueProcessingTapNew, (void *)p_AudioQueueProcessingTapDispose,
+		(void *)p_AudioQueueProcessingTapGetSourceAudio, (void *)p_AudioQueueProcessingTapGetQueueTime,
 		(void *)p_AudioServicesCreateSystemSoundID, (void *)p_AudioServicesDisposeSystemSoundID,
 		(void *)p_AudioServicesPlaySystemSound, (void *)p_AudioServicesPlayAlertSound,
 		(void *)p_AudioComponentFindNext, (void *)p_AudioComponentCount,

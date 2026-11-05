@@ -216,6 +216,17 @@ int main(void)
 	fn_check("kAudioUnitParameterFlag_IsReadable", kAudioUnitParameterFlag_IsReadable, 1073741824);
 	fn_check("kAudioUnitParameterFlag_IsWritable", kAudioUnitParameterFlag_IsWritable, 2147483648);
 
+	/* --- the processing tap's flags and its refusal ------------------------- */
+	/* `FLAGS(1 << n)` rather than `FLAGS(0x…)`, because these are the bits a tap is told about the stream and a
+	 * reader will look for the whole set: the constructor's three and the two that describe the source. */
+	fn_check("kAudioQueueProcessingTap_PreEffects", kAudioQueueProcessingTap_PreEffects, 1);
+	fn_check("kAudioQueueProcessingTap_PostEffects", kAudioQueueProcessingTap_PostEffects, 2);
+	fn_check("kAudioQueueProcessingTap_Siphon", kAudioQueueProcessingTap_Siphon, 4);
+	fn_check("kAudioQueueProcessingTap_StartOfStream", kAudioQueueProcessingTap_StartOfStream, 256);
+	fn_check("kAudioQueueProcessingTap_EndOfStream", kAudioQueueProcessingTap_EndOfStream, 512);
+	fn_check("kAudioQueueErr_TooManyTaps", kAudioQueueErr_TooManyTaps, -66670);
+	fn_check("kAudioQueueErr_InvalidTapContext", kAudioQueueErr_InvalidTapContext, -66669);
+
 	if (g_failures != 0) {
 		fprintf(stderr, "api-macros: %d failure(s)\n", g_failures);
 		return 1;

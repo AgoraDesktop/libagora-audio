@@ -189,7 +189,14 @@ static void fn_test_interleaving(void)
 	float right[64];
 	OSStatus status;
 	UInt32 wanted = 64;
-	AudioBufferList list;
+	/* **THE LIST IS VARIABLE-LENGTH.** A non-interleaved conversion writes one buffer per channel, so the storage has
+	 * to be a list plus the buffers past its declared single element — a bare `AudioBufferList` is exactly the trap the
+	 * component's own notes name, and a Debug build is where it shows: this test's `wanted` sat right after the two
+	 * planes and the out-of-bounds write turned a 64-frame conversion into a one-frame one. */
+	union {
+		AudioBufferList list;
+		uint8_t storage[sizeof(AudioBufferList) + sizeof(AudioBuffer)];
+	} split;
 	stereo_source source;
 
 	status = AudioConverterNew(&in, &out, &converter);
@@ -198,20 +205,20 @@ static void fn_test_interleaving(void)
 		return;
 	}
 
-	memset(&list, 0, sizeof(list));
-	list.mNumberBuffers = 2;
-	list.mBuffers[0].mNumberChannels = 1;
-	list.mBuffers[0].mDataByteSize = (UInt32)sizeof(left);
-	list.mBuffers[0].mData = left;
-	list.mBuffers[1].mNumberChannels = 1;
-	list.mBuffers[1].mDataByteSize = (UInt32)sizeof(right);
-	list.mBuffers[1].mData = right;
+	memset(&split, 0, sizeof(split));
+	split.list.mNumberBuffers = 2;
+	split.list.mBuffers[0].mNumberChannels = 1;
+	split.list.mBuffers[0].mDataByteSize = (UInt32)sizeof(left);
+	split.list.mBuffers[0].mData = left;
+	split.list.mBuffers[1].mNumberChannels = 1;
+	split.list.mBuffers[1].mDataByteSize = (UInt32)sizeof(right);
+	split.list.mBuffers[1].mData = right;
 
 	source.left_value = 0.5f;
 	source.right_value = -0.5f;
 	source.remaining = 64;
 
-	status = AudioConverterFillComplexBuffer(converter, fn_stereo_input, &source, &wanted, &list, NULL);
+	status = AudioConverterFillComplexBuffer(converter, fn_stereo_input, &source, &wanted, &split.list, NULL);
 	fn_check("the split conversion runs", status == 0 && wanted == 64);
 	fn_check("the split kept the left channel left", left[0] == 0.5f && left[63] == 0.5f);
 	fn_check("the split kept the right channel right", right[0] == -0.5f && right[63] == -0.5f);

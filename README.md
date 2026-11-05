@@ -167,10 +167,21 @@ buffer in the client's format, hands each finished buffer back through the same 
 what is left with silence — the path a caller writes a file through, and the one that makes the callback path testable
 on a machine with no sound card at all.
 
+**A tap is what made the render path stage its source.** A processing tap sees the queue's *decoded* audio in the
+client's own format, and the device path used to convert straight out of the caller's buffers into the device's — so
+there was never a moment when the audio existed in one piece, in the format the client asked for, for a tap to look
+at. The source is now gathered into a short FIFO in the client's format (the *stage*), the tap runs on that, and the
+conversion, the channel mapping and the volume are the tail of the pipeline after it. `AudioQueueProcessingTapNew`
+takes one tap per queue and only on a stopped one; the tap pulls the source with
+`AudioQueueProcessingTapGetSourceAudio`, may process it in place (the pointers it is given point into the stage), and
+answers with `AudioQueueProcessingTapGetQueueTime` — which is only answerable after the pull, and only from inside the
+callback. `kAudioQueueProcessingTap_StartOfStream` and `_EndOfStream` say when the source is discontinuous and when it
+has run out, and a **siphon** is shown the source without pulling it and without changing what the device plays. The
+only thing the flags do not buy here is a difference between `PreEffects` and `PostEffects`: this queue has no effects
+between them, so both hear the same audio and only the flag they are reported under differs.
+
 Still to come: the `AudioQueue` input side (there is no capture backend in the HAL — no driver opens a stream for
-reading — so the door refuses by name), processing taps (a tap sees the queue's audio in the *client's* format, and the
-device path converts straight from the client's buffers into the device's, so the render path needs a client-format
-intermediate before a tap can tap anything), `AUGraph` sub-graphs (their Carbon doors are not declared), and
+reading — so the door refuses by name), `AUGraph` sub-graphs (their Carbon doors are not declared), and
 `AudioFormat`'s `kAudioFormatProperty_FormatList` (the constant is in the manifest but its specifier's shape is not, so
 the door stays refused rather than guessed). `../AUDIO-PLAN.md` §9 is the schedule and §6 the header-by-header
 commitment.
@@ -288,7 +299,13 @@ skips, exit 77, when there is none):
   after the queue's volume is halved, **0.0** after a stop; a buffer enqueued twice is refused by name; **a
   16-bit mono 8 kHz buffer is audible on the stereo device**, which is the channel mapping the queue does because
   the converter — like Apple's — refuses a channel-count change; and the system sounds are audible: a WAV loaded
-  by URL, and the **generated** alert tone.
+  by URL, and the **generated** alert tone. Then the tap, measured at both ends: the tap is shown **0.500** and the
+  device plays **0.250**, so "the callback ran" and "the audio was processed" are separate claims; a **siphon**
+  hears 0.5 and the device still plays 0.5; the source flags report the **start** and, once the queue runs dry, the
+  **end**; `GetQueueTime` answers the quantum's frame count; a second tap, a tap on a running queue and a dispose of
+  one are each refused by name; `GetSourceAudio` and `GetQueueTime` outside the callback answer
+  `kAudioQueueErr_InvalidTapContext`; and `AudioQueueOfflineRender` goes through the tap too, so a caller writing a
+  file gets the processed audio.
 - **`auv3`** — every assertion in pairs, because the object is a view of the C unit: the default output unit's
   component description, name, one input bus and one output bus, the bus format **as the unit's own
   `StreamFormat` property reports it**, a format written through the bus arriving at the C door, the maximum

@@ -19,9 +19,13 @@
  * `AudioQueueSetParameter`. 10.12 has no `kAudioQueueProperty_Volume`, and this header does not invent one.
  *
  * WHAT IS IMPLEMENTED: output queues over the default output device, in linear PCM of any supported
- * description, resampled and converted to the device's format with `AudioConverter`. Input queues, timelines,
- * taps, offline rendering and parameter ramps are declared-and-refused by name: each is a real door on
- * macOS, and each needs machinery this phase does not have.
+ * description, resampled and converted to the device's format with `AudioConverter`; the queue's timeline;
+ * offline rendering; and one processing tap, which sees the queue's decoded audio in the client's format.
+ *
+ * **A TAP HERE SEES THE SOURCE BEFORE THE QUEUE'S OWN CONVERSION, MAPPING AND VOLUME**, because those are the tail
+ * of the pipeline. That is exactly what Apple's header promises for a PreEffects tap; a PostEffects tap is reported
+ * as such but the queue has no effects between the two to place it after, so it hears the same audio. Input queues
+ * and processing taps on them are declared-and-refused by name: there is no capture backend in the device layer.
  */
 #ifndef AGORA_AUDIOTOOLBOX_AUDIOQUEUE_H
 #define AGORA_AUDIOTOOLBOX_AUDIOQUEUE_H
@@ -44,7 +48,17 @@ typedef struct OpaqueAudioQueueProcessingTap * AudioQueueProcessingTapRef;
 typedef UInt32 AudioQueuePropertyID;
 typedef UInt32 AudioQueueParameterID;
 typedef Float32 AudioQueueParameterValue;
-typedef UInt32 AudioQueueProcessingTapFlags;
+
+/* The first three flags are the constructor's and are reported on every callback; the last two describe the source a
+ * tap pulls. */
+typedef CF_OPTIONS(UInt32, AudioQueueProcessingTapFlags) {
+	kAudioQueueProcessingTap_PreEffects    = (1 << 0),
+	kAudioQueueProcessingTap_PostEffects   = (1 << 1),
+	kAudioQueueProcessingTap_Siphon        = (1 << 2),
+
+	kAudioQueueProcessingTap_StartOfStream = (1 << 8),
+	kAudioQueueProcessingTap_EndOfStream   = (1 << 9)
+};
 
 struct AudioQueueBuffer
 {
@@ -134,6 +148,7 @@ CF_ENUM(OSStatus)
 	kAudioQueueErr_BufferEnqueuedTwice  = -66666,
 	kAudioQueueErr_EnqueueDuringReset   = -66632,
 	kAudioQueueErr_InvalidOfflineMode   = -66626,
+	kAudioQueueErr_TooManyTaps          = -66670,
 	kAudioQueueErr_InvalidTapContext    = -66669,
 	kAudioQueueErr_InvalidTapType       = -66667
 };
@@ -261,11 +276,30 @@ AudioQueueCreateTimeline(AudioQueueRef inAQ, AudioQueueTimelineRef _Nullable * _
 extern OSStatus
 AudioQueueDisposeTimeline(AudioQueueRef inAQ, AudioQueueTimelineRef inTimeline);
 
+/* One processing tap per queue, created and disposed only while the queue is stopped. It processes the queue's
+ * decoded audio in the client's format: it may render into the source it is given (in place) or into its own
+ * buffers, and it pulls that source with `AudioQueueProcessingTapGetSourceAudio`. The two `Get` doors are valid only
+ * from inside the callback. */
 extern OSStatus
 AudioQueueProcessingTapNew(AudioQueueRef inAQ, AudioQueueProcessingTapCallback inCallback,
                            void * _Nullable inClientData, AudioQueueProcessingTapFlags inFlags,
-                           UInt32 * outMaxFrames, AudioStreamBasicDescription * outProcessingFormat,
+                           UInt32 * _Nonnull outMaxFrames,
+                           AudioStreamBasicDescription * _Nonnull outProcessingFormat,
                            AudioQueueProcessingTapRef _Nullable * _Nonnull outAQTap);
+
+extern OSStatus
+AudioQueueProcessingTapDispose(AudioQueueProcessingTapRef inAQTap);
+
+extern OSStatus
+AudioQueueProcessingTapGetSourceAudio(AudioQueueProcessingTapRef inAQTap, UInt32 inNumberFrames,
+                                      AudioTimeStamp * _Nonnull ioTimeStamp,
+                                      AudioQueueProcessingTapFlags * _Nonnull outFlags,
+                                      UInt32 * _Nonnull outNumberFrames, AudioBufferList * _Nonnull ioData);
+
+extern OSStatus
+AudioQueueProcessingTapGetQueueTime(AudioQueueProcessingTapRef inAQTap,
+                                    Float64 * _Nonnull outQueueSampleTime,
+                                    UInt32 * _Nonnull outQueueFrameCount);
 
 #if defined(__cplusplus)
 }

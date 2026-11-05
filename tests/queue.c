@@ -535,6 +535,330 @@ static void fn_test_mono_mapping(void)
 	AudioQueueDispose(queue, true);
 }
 
+/* ------------------------------------------------------------------------------------------------
+ * Processing taps: the queue's decoded audio, in the client's format, before the device sees it.
+ *
+ * **THE TAP'S OWN STATE PROVES THE SOURCE AND THE DEVICE PROVES THE OUTPUT.** A tap that was called with 0.5 and
+ * halved it is not the same claim as a device that plays 0.25, and a queue that merely invoked a callback would
+ * satisfy the first and be silent at the second. So both are measured, plus the two flags a caller cannot compute
+ * for itself: the start and the end of the source.
+ * ---------------------------------------------------------------------------------------------- */
+
+typedef struct {
+	int                            calls;
+	float                          peak;		/* the largest sample the tap was shown */
+	float                          scale;		/* what it multiplies the source by; 1.0 is an in-place pass */
+	bool                           siphon;
+	bool                           start_of_stream;
+	bool                           end_of_stream;
+	bool                           entry_clean;	/* ioData arrived empty, as a non-siphon's must */
+	OSStatus                       source_status;
+	OSStatus                       queue_time_status;
+	Float64                        queue_time;
+	UInt32                         queue_frames;
+	UInt32                         source_frames;
+} tap_state;
+
+static void fn_tap(void *client, AudioQueueProcessingTapRef tap, UInt32 number_frames, AudioTimeStamp *time,
+                   AudioQueueProcessingTapFlags *flags, UInt32 *out_frames, AudioBufferList *ioData)
+{
+	tap_state *state = client;
+	AudioQueueProcessingTapFlags got = 0;
+	AudioBufferList list;
+	UInt32 frames = 0;
+	UInt32 shown = 0;
+	UInt32 i;
+
+	state->calls++;
+
+	if (state->siphon) {
+		/* A siphon is shown the source and must not alter it; it does not pull, so ioData arrives valid. The
+		 * entry flags are the constructor's, which is what a siphon is told about the stream. */
+		state->start_of_stream |= ((*flags & kAudioQueueProcessingTap_StartOfStream) != 0);
+		shown = number_frames;
+	} else {
+		/* Apple: "on entry, the buffer pointers are null and the lengths are zero." Recorded on the first call
+		 * only: a later one must not overwrite what the first saw. */
+		if (state->calls == 1) {
+			state->entry_clean = ioData->mNumberBuffers == 1 && ioData->mBuffers[0].mData == NULL
+			                  && ioData->mBuffers[0].mDataByteSize == 0;
+		}
+
+		memset(&list, 0, sizeof(list));
+		list.mNumberBuffers = 1;	/* the queue owns the pointers: none are provided */
+		state->source_status = AudioQueueProcessingTapGetSourceAudio(tap, number_frames, time, &got, &frames,
+		                                                            &list);
+		if (state->source_status == 0) {
+			state->source_frames = frames;
+			state->start_of_stream |= ((got & kAudioQueueProcessingTap_StartOfStream) != 0);
+			state->end_of_stream |= ((got & kAudioQueueProcessingTap_EndOfStream) != 0);
+			ioData->mNumberBuffers = 1;
+			ioData->mBuffers[0] = list.mBuffers[0];
+			*out_frames = frames;
+			*flags = got;
+			shown = frames;
+		}
+
+		/* Only answerable here, and only after the source has been pulled. */
+		state->queue_time_status = AudioQueueProcessingTapGetQueueTime(tap, &state->queue_time,
+		                                                              &state->queue_frames);
+	}
+
+	if (shown == 0 || ioData->mBuffers[0].mData == NULL) {
+		return;
+	}
+
+	{
+		float *samples = ioData->mBuffers[0].mData;
+		UInt32 count = shown * 2;
+
+		for (i = 0; i < count; i++) {
+			float value = samples[i] < 0.0f ? -samples[i] : samples[i];
+
+			if (value > state->peak) {
+				state->peak = value;
+			}
+			samples[i] *= state->scale;
+		}
+	}
+}
+
+/* A refill that stops re-enqueueing instead of stopping the queue, so what is queued can run out while the io proc is
+ * still being called — which is the only way a tap ever sees the end of the source. */
+static void fn_refill_patient(void *client, AudioQueueRef queue, AudioQueueBufferRef buffer)
+{
+	loop_state *state = client;
+	float *samples;
+	UInt32 frames;
+	UInt32 i;
+
+	state->calls++;
+
+	if (state->stop_refilling) {
+		return;
+	}
+
+	frames = buffer->mAudioDataByteSize / (2 * (UInt32)sizeof(float));
+	samples = buffer->mAudioData;
+	for (i = 0; i < frames * 2; i++) {
+		samples[i] = state->value;
+	}
+
+	AudioQueueEnqueueBuffer(queue, buffer, 0, NULL);
+}
+
+static void fn_queue_two_buffers(AudioQueueRef queue, AudioQueueBufferRef *given, UInt32 frames, float value)
+{
+	UInt32 i;
+
+	for (i = 0; i < 2; i++) {
+		float *samples;
+		UInt32 sample;
+
+		AudioQueueAllocateBuffer(queue, frames * 8, &given[i]);
+		samples = given[i]->mAudioData;
+		for (sample = 0; sample < frames * 2; sample++) {
+			samples[sample] = value;
+		}
+		given[i]->mAudioDataByteSize = frames * 8;
+		fn_check("the buffer is enqueued", AudioQueueEnqueueBuffer(queue, given[i], 0, NULL) == 0);
+	}
+}
+
+static void fn_test_taps(void)
+{
+	AudioDeviceID device = fn_default_output();
+	AudioStreamBasicDescription format = fn_pcm(48000.0, 2, 32,
+	                                            kAudioFormatFlagIsFloat | kAudioFormatFlagIsPacked);
+	AudioQueueBufferRef given[2];
+	AudioQueueBufferRef siphoned[2];
+	AudioQueueProcessingTapRef tap = NULL;
+	AudioQueueProcessingTapRef second = NULL;
+	AudioStreamBasicDescription processing;
+	AudioQueueProcessingTapFlags flags = 0;
+	AudioTimeStamp stamp;
+	AudioBufferList list;
+	AudioQueueRef queue = NULL;
+	AudioQueueRef siphon_queue = NULL;
+	tap_state state;
+	tap_state siphon_state;
+	loop_state loop;
+	loop_state siphon_loop;
+	OSStatus status;
+	UInt32 max_frames = 0;
+	UInt32 got = 0;
+	UInt32 frames = 1024;
+	float peak = 0.0f;
+
+	memset(&state, 0, sizeof(state));
+	state.scale = 0.5f;
+	memset(&siphon_state, 0, sizeof(siphon_state));
+	siphon_state.scale = 1.0f;
+	siphon_state.siphon = true;
+	memset(&loop, 0, sizeof(loop));
+	loop.value = 0.5f;
+	memset(&siphon_loop, 0, sizeof(siphon_loop));
+	siphon_loop.value = 0.5f;
+
+	status = AudioQueueNewOutput(&format, fn_refill_patient, &loop, NULL, NULL, 0, &queue);
+	fn_check("a queue for the tap is created", status == 0 && queue != NULL);
+	if (status != 0) {
+		return;
+	}
+
+	memset(&processing, 0, sizeof(processing));
+	fn_check("a tap with neither effects flag is refused by name",
+	         AudioQueueProcessingTapNew(queue, fn_tap, &state, 0, &max_frames, &processing, &tap)
+	             == kAudioQueueErr_InvalidParameter);
+	fn_check("a tap with both effects flags is refused by name",
+	         AudioQueueProcessingTapNew(queue, fn_tap, &state,
+	                                    kAudioQueueProcessingTap_PreEffects
+	                                        | kAudioQueueProcessingTap_PostEffects,
+	                                    &max_frames, &processing, &tap)
+	             == kAudioQueueErr_InvalidParameter);
+
+	status = AudioQueueProcessingTapNew(queue, fn_tap, &state, kAudioQueueProcessingTap_PreEffects,
+	                                    &max_frames, &processing, &tap);
+	fn_check("a tap is created on a stopped queue", status == 0 && tap != NULL);
+	fn_check("the tap's processing format is the queue's own",
+	         processing.mSampleRate == 48000.0 && processing.mChannelsPerFrame == 2
+	             && (processing.mFormatFlags & kAudioFormatFlagIsFloat) != 0);
+	fn_check("the tap is told the largest quantum it can be asked for", max_frames >= 2400);
+
+	fn_check("a second tap is refused by name",
+	         AudioQueueProcessingTapNew(queue, fn_tap, &state, kAudioQueueProcessingTap_PostEffects,
+	                                    &max_frames, &processing, &second)
+	             == kAudioQueueErr_TooManyTaps);
+
+	memset(&list, 0, sizeof(list));
+	list.mNumberBuffers = 1;
+	memset(&stamp, 0, sizeof(stamp));
+	fn_check("the source can only be pulled from inside the callback",
+	         AudioQueueProcessingTapGetSourceAudio(tap, 128, &stamp, &flags, &got, &list)
+	             == kAudioQueueErr_InvalidTapContext);
+	fn_check("the queue's time can only be read from inside the callback",
+	         AudioQueueProcessingTapGetQueueTime(tap, &state.queue_time, &state.queue_frames)
+	             == kAudioQueueErr_InvalidTapContext);
+
+	fn_queue_two_buffers(queue, given, frames, 0.5f);
+
+	fn_check("the queue starts", AudioQueueStart(queue, NULL) == 0);
+	fn_check("a tap cannot be disposed while the queue runs",
+	         AudioQueueProcessingTapDispose(tap) == kAudioQueueErr_InvalidRunState);
+	fn_check("a second tap cannot be created while the queue runs",
+	         AudioQueueProcessingTapNew(queue, fn_tap, &state, kAudioQueueProcessingTap_PostEffects,
+	                                    &max_frames, &processing, &second)
+	             == kAudioQueueErr_InvalidRunState);
+
+	fn_sleep_ms(220);
+	fn_agora_audio_test_peaks(device, &peak, NULL);
+	fn_check("the tap was called", state.calls > 0);
+	fn_check("the tap was shown the source, in the client's format",
+	         state.source_status == 0 && state.peak > 0.45f && state.peak < 0.55f);
+	fn_check("the tap's output is what the device plays", peak > 0.2f && peak < 0.3f);
+	fn_check("the tap is told when the source starts", state.start_of_stream);
+	fn_check("a tap's ioData arrives empty, as it has to before it pulls", state.entry_clean);
+	fn_check("the queue's time is answered inside the callback",
+	         state.queue_time_status == 0 && state.queue_frames > 0);
+
+	loop.stop_refilling = true;
+	fn_sleep_ms(160);
+	fn_check("the tap is told when the source ends", state.end_of_stream);
+
+	fn_check("the queue stops", AudioQueueStop(queue, true) == 0);
+	fn_check("the tap is disposed", AudioQueueProcessingTapDispose(tap) == 0);
+	fn_check("the queue takes a new tap once the old one is gone",
+	         AudioQueueProcessingTapNew(queue, fn_tap, &state, kAudioQueueProcessingTap_PreEffects,
+	                                    &max_frames, &processing, &tap)
+	             == 0);
+	fn_check("the replacement tap is disposed", AudioQueueProcessingTapDispose(tap) == 0);
+
+	printf("      tap: %d callbacks, source %.3f, device %.3f, %u frames of queue time, %.4f s\n",
+	       state.calls, (double)state.peak, (double)peak, (unsigned)state.queue_frames,
+	       (double)state.queue_time);
+
+	fn_check("the queue is disposed", AudioQueueDispose(queue, true) == 0);
+
+	/* **A SIPHON HEARS WITHOUT CHANGING**: the device must still play 0.5 while the tap has been shown it. */
+	status = AudioQueueNewOutput(&format, fn_refill, &siphon_loop, NULL, NULL, 0, &siphon_queue);
+	fn_check("a queue for the siphon is created", status == 0 && siphon_queue != NULL);
+	if (status == 0) {
+		status = AudioQueueProcessingTapNew(siphon_queue, fn_tap, &siphon_state,
+		                                    kAudioQueueProcessingTap_PreEffects
+		                                        | kAudioQueueProcessingTap_Siphon,
+		                                    &max_frames, &processing, &tap);
+		fn_check("a siphon tap is created", status == 0 && tap != NULL);
+		fn_queue_two_buffers(siphon_queue, siphoned, frames, 0.5f);
+		fn_check("the siphon's queue starts", AudioQueueStart(siphon_queue, NULL) == 0);
+		fn_sleep_ms(180);
+		fn_agora_audio_test_peaks(device, &peak, NULL);
+		fn_check("the siphon was shown the source", siphon_state.calls > 0 && siphon_state.peak > 0.45f);
+		fn_check("a siphon does not change what the device plays", peak > 0.45f && peak < 0.55f);
+		fn_check("the siphon's queue stops", AudioQueueStop(siphon_queue, true) == 0);
+		fn_check("the siphon is disposed", AudioQueueProcessingTapDispose(tap) == 0);
+		fn_check("the siphon's queue is disposed", AudioQueueDispose(siphon_queue, true) == 0);
+	}
+}
+
+/* The tap is not a device feature: `AudioQueueOfflineRender` goes through the same chain, which is what lets a caller
+ * that writes a file get the processed audio rather than the raw queue. */
+static void fn_test_tap_offline(void)
+{
+	AudioStreamBasicDescription format = fn_pcm(48000.0, 2, 32,
+	                                            kAudioFormatFlagIsFloat | kAudioFormatFlagIsPacked);
+	AudioQueueRef queue = NULL;
+	AudioQueueBufferRef queued = NULL;
+	AudioQueueBufferRef out = NULL;
+	AudioQueueProcessingTapRef tap = NULL;
+	AudioStreamBasicDescription processing;
+	tap_state state;
+	offline_state callbacks;
+	AudioTimeStamp stamp;
+	OSStatus status;
+	UInt32 max_frames = 0;
+	UInt32 frames = 256;
+	UInt32 i;
+	float *samples;
+	bool halved = true;
+
+	memset(&state, 0, sizeof(state));
+	state.scale = 0.5f;
+	memset(&callbacks, 0, sizeof(callbacks));
+	memset(&stamp, 0, sizeof(stamp));
+	stamp.mFlags = kAudioTimeStampSampleTimeValid;
+
+	status = AudioQueueNewOutput(&format, fn_offline_refilled, &callbacks, NULL, NULL, 0, &queue);
+	fn_check("a queue for the offline tap is created", status == 0 && queue != NULL);
+	if (status != 0) {
+		return;
+	}
+
+	status = AudioQueueProcessingTapNew(queue, fn_tap, &state, kAudioQueueProcessingTap_PostEffects,
+	                                    &max_frames, &processing, &tap);
+	fn_check("a tap for offline render is created", status == 0 && tap != NULL);
+
+	AudioQueueAllocateBuffer(queue, frames * 8, &queued);
+	AudioQueueAllocateBuffer(queue, frames * 8, &out);
+	samples = queued->mAudioData;
+	for (i = 0; i < frames * 2; i++) {
+		samples[i] = 0.5f;
+	}
+	queued->mAudioDataByteSize = frames * 8;
+	fn_check("the buffer is queued", AudioQueueEnqueueBuffer(queue, queued, 0, NULL) == 0);
+
+	fn_check("the queue renders offline through the tap", AudioQueueOfflineRender(queue, &stamp, out, frames) == 0);
+	samples = out->mAudioData;
+	for (i = 0; i < frames * 2; i++) {
+		if (samples[i] < 0.24f || samples[i] > 0.26f) {
+			halved = false;
+		}
+	}
+	fn_check("the tap processed the offline render", state.calls > 0 && halved);
+
+	fn_check("the tap is disposed", AudioQueueProcessingTapDispose(tap) == 0);
+	fn_check("the queue is disposed", AudioQueueDispose(queue, true) == 0);
+}
+
 static void fn_test_system_sounds(void)
 {
 	char path[] = "/tmp/agora-queue-XXXXXX";
@@ -628,6 +952,8 @@ int main(void)
 	fn_test_timeline();
 	fn_test_offline();
 	fn_test_mono_mapping();
+	fn_test_taps();
+	fn_test_tap_offline();
 	fn_test_system_sounds();
 
 	if (g_failures != 0) {
