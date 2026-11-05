@@ -17,6 +17,7 @@
  */
 
 #include <AudioToolbox/AudioToolbox.h>
+#include <AudioToolbox/ExtendedAudioFile.h>
 
 #include <stdio.h>
 
@@ -153,6 +154,25 @@ int main(void)
 	fn_check("kAudioConverterCurrentOutputStreamDescription",
 	         kAudioConverterCurrentOutputStreamDescription, 1633906532);  /* 'acod' */
 	fn_check("kAudioConverterChannelMap", kAudioConverterChannelMap, 1667788144);
+
+	/* --- AudioToolbox/AudioFile: containers, permissions, properties. ------ */
+	fn_check("kAudioFileWAVEType", kAudioFileWAVEType, 1463899717);     /* 'WAVE' */
+	fn_check("kAudioFileAIFFType", kAudioFileAIFFType, 1095321158);     /* 'AIFF' */
+	fn_check("kAudioFileCAFType", kAudioFileCAFType, 1667327590);       /* 'caff' */
+	fn_check("kAudioFileReadPermission", kAudioFileReadPermission, 1);
+	fn_check("kAudioFileWritePermission", kAudioFileWritePermission, 2);
+	fn_check("kAudioFileReadWritePermission", kAudioFileReadWritePermission, 3);
+	fn_check("kAudioFileFlags_EraseFile", kAudioFileFlags_EraseFile, 1);
+	fn_check("kAudioFileUnsupportedFileTypeError", kAudioFileUnsupportedFileTypeError, 1954115647);
+	fn_check("kAudioFileUnsupportedDataFormatError", kAudioFileUnsupportedDataFormatError, 1718449215);
+	fn_check("kAudioFileUnsupportedPropertyError", kAudioFileUnsupportedPropertyError, 1886681407);
+	fn_check("kAudioFileBadPropertySizeError", kAudioFileBadPropertySizeError, 561211770);
+	fn_check("kAudioFileNotOpenError", kAudioFileNotOpenError, -38);
+	fn_check("kAudioFilePropertyFileFormat", kAudioFilePropertyFileFormat, 1717988724);
+	fn_check("kAudioFilePropertyDataOffset", kAudioFilePropertyDataOffset, 1685022310);
+	fn_check("kAudioFilePropertyAudioDataByteCount", kAudioFilePropertyAudioDataByteCount, 1650683508);
+	fn_check("kAudioFilePropertyAudioDataPacketCount", kAudioFilePropertyAudioDataPacketCount, 1885564532);
+	fn_check("kExtAudioFileProperty_ClientDataFormat", kExtAudioFileProperty_ClientDataFormat, 1667657076);
 
 	if (g_failures != 0) {
 		fprintf(stderr, "api-macros: %d failure(s)\n", g_failures);

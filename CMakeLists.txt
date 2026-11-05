@@ -55,7 +55,9 @@ add_library(Audio SHARED
     "${CMAKE_CURRENT_SOURCE_DIR}/HostTime.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/AudioFormat.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/AudioResampler.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/AudioConverter.c")
+    "${CMAKE_CURRENT_SOURCE_DIR}/AudioConverter.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/AudioFile.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/ExtAudioFile.c")
 
 set_target_properties(Audio PROPERTIES OUTPUT_NAME agora-audio)
 
@@ -72,7 +74,8 @@ target_link_libraries(Audio
     PUBLIC
         CoreFoundation::CoreFoundation
     PRIVATE
-        Threads::Threads)
+        Threads::Threads
+        m)
 
 # **THE TESTS ARE A DEVELOPMENT ARTEFACT, AND A RELEASE DOES NOT BUILD THEM.** `-DBUILD_TESTING=OFF`,
 # which the release driver passes, configures and compiles no test executable at all.

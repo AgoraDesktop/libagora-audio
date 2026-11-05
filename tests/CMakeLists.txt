@@ -37,6 +37,10 @@ add_executable(converter converter.c)
 target_link_libraries(converter PRIVATE Audio m)
 add_test(NAME converter COMMAND converter)
 
+add_executable(file file.c)
+target_link_libraries(file PRIVATE Audio m)
+add_test(NAME file COMMAND file)
+
 add_executable(hosttime hosttime.c)
 target_link_libraries(hosttime PRIVATE Audio)
 add_test(NAME hosttime COMMAND hosttime)
@@ -49,5 +53,5 @@ set(_agora_runtime_dirs
     "$<TARGET_FILE_DIR:CoreFoundation::CoreFoundation>")
 list(REMOVE_DUPLICATES _agora_runtime_dirs)
 string(REPLACE ";" ":" _agora_ld_path "${_agora_runtime_dirs}")
-set_tests_properties(api-layout api-macros api-cxx api-prototypes format converter hosttime PROPERTIES
+set_tests_properties(api-layout api-macros api-cxx api-prototypes format converter file hosttime PROPERTIES
     ENVIRONMENT "LD_LIBRARY_PATH=${_agora_ld_path}")
