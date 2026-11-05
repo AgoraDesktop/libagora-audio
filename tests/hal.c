@@ -446,11 +446,12 @@ static void fn_test_clock(void)
  * `(n % rate) / rate` on the left and half that on the right, so "the io proc was given the device's input" is one
  * subtraction: consecutive frames step by 1/48000, and a dropped or duplicated frame is a step that is not.
  *
- * THE ALSA LEG CAN ONLY MEASURE DELIVERY, AND SAYS SO. Its `null` PCM opens for capture and returns the full quantum
- * every cycle, but every sample is 0.0 — a plugin recording silence is not a defect, and a suite that demanded a ramp
- * there would be demanding the fixture of a different backend. So the values are asserted on the backend that owns a
- * known source, and the shape (a stream, a direction, a cycle's worth of frames) is asserted on both. `pipewire` and
- * `sndio` open no capture stream yet, so they say so and move on.
+ * THE OTHER TWO LEGS CAN ONLY MEASURE DELIVERY, AND SAY SO. ALSA's `null` PCM opens for capture and returns the full
+ * quantum every cycle, but every sample is 0.0 — a plugin recording silence is not a defect; the session server's
+ * default source returns whatever the room sounds like. A suite that demanded a ramp there would be demanding the
+ * fixture of a different backend, so the values are asserted on the backend that owns a known source and the shape
+ * (a stream, a direction, a cycle's worth of frames) on all of them. `sndio` opens no capture stream yet, so it says so
+ * and moves on.
  * ---------------------------------------------------------------------------------------------- */
 
 typedef struct {
@@ -459,7 +460,9 @@ typedef struct {
 	bool   saw_input;
 	bool   check_ramp;	/* the null backend's ramp is the only source this suite knows */
 	bool   ramp;		/* every consecutive pair stepped up the ramp (a wrap is allowed) */
+	bool   continuous;	/* and the first frame of each cycle carries on from the last one's last */
 	bool   half_right;	/* the right channel is half the left, in the same frame */
+	float  previous;	/* the previous cycle's last left sample */
 } input_watch;
 
 static OSStatus fn_watch_input(AudioObjectID device, const AudioTimeStamp *now, const AudioBufferList *input,
@@ -499,6 +502,18 @@ static OSStatus fn_watch_input(AudioObjectID device, const AudioTimeStamp *now, 
 
 	watch->half_right = watch->half_right && (samples[1] == samples[0] * 0.5f);
 
+	/* **THE SEAM BETWEEN TWO CYCLES IS WHERE A FRAME GOES MISSING.** One buffer's samples being in order says nothing
+	 * about the join between buffers, which is exactly what a dropped or duplicated quantum looks like. */
+	if (watch->calls > 1) {
+		float delta = samples[0] - watch->previous;
+		bool stepped = (delta > 1.5e-5f && delta < 2.5e-5f) || delta < -0.5f;
+
+		if (!stepped) {
+			watch->continuous = false;
+		}
+	}
+	watch->previous = samples[(frames - 1) * channels];
+
 	for (i = 1; i < frames; i++) {
 		float delta = samples[i * channels] - samples[(i - 1) * channels];
 		bool stepped = (delta > 1.5e-5f && delta < 2.5e-5f)	/* one frame up the ramp */
@@ -522,7 +537,8 @@ static void fn_test_input_device(void)
 	AudioDeviceID input = kAudioObjectUnknown;
 	UInt32 size = sizeof(input);
 
-	bool can_capture = strcmp(g_driver, "null") == 0 || strcmp(g_driver, "alsa") == 0;
+	bool can_capture = strcmp(g_driver, "null") == 0 || strcmp(g_driver, "alsa") == 0
+	                || strcmp(g_driver, "pipewire") == 0;
 
 	if (!can_capture) {
 		printf("      input: the %s backend opens no capture stream, so there is nothing to measure\n", g_driver);
@@ -532,6 +548,7 @@ static void fn_test_input_device(void)
 	memset(&watch, 0, sizeof(watch));
 	watch.check_ramp = strcmp(g_driver, "null") == 0;
 	watch.ramp = true;
+	watch.continuous = true;
 	watch.half_right = true;
 
 	fn_check("a default input device exists",
@@ -564,11 +581,23 @@ static void fn_test_input_device(void)
 	fn_check("an io proc on the input device is created",
 	         AudioDeviceCreateIOProcID(input, fn_watch_input, &watch, &proc) == 0 && proc != NULL);
 	fn_check("the input device starts", AudioDeviceStart(input, NULL) == 0);
-	fn_sleep_ms(150);
+
+	/* A session server's quantum is the graph's, not ours, so "a cycle arrived" is a *when*: wait for the first one
+	 * that carries input, with a deadline, rather than assuming one lands inside a fixed sleep. */
+	{
+		long waited = 0;
+
+		while (watch.calls < 2 && waited < 500) {
+			fn_sleep_ms(10);
+			waited += 10;
+		}
+	}
+
 	fn_check("the io proc is handed the device's input", watch.calls > 0 && watch.saw_input);
 	fn_check("a cycle of input is the device's quantum", !g_exact_numbers || watch.frames == 512);
 	if (watch.check_ramp) {
 		fn_check("the input is the device's ramp, in order and without a gap", watch.ramp);
+		fn_check("one cycle carries on from the one before it", watch.continuous);
 		fn_check("the input's two channels are not the same signal", watch.half_right);
 		printf("      input: %d calls of %u frames, the null backend's ramp\n", watch.calls,
 		       (unsigned)watch.frames);

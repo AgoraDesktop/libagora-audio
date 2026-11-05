@@ -181,25 +181,25 @@ static void *fn_alsa_thread(void *argument)
 
 	while (!engine->quit) {
 		const float *capture = NULL;
+		UInt32 capture_frames = 0;
 		snd_pcm_sframes_t written;
 
 		/* **THE INPUT IS READ BEFORE THE MIXER IS ASKED FOR OUTPUT.** Both directions are one cycle of one device,
-		 * so the cycle starts with what the device has already heard; a short read (an xrun, a signal) leaves this
-		 * cycle without input rather than handing the HAL a buffer half-filled with the last one. */
+		 * so the cycle starts with what the device has already heard. A short read (an xrun, a signal) is passed as
+		 * the shorter input it is — the seam carries the input's own length — rather than dropped or padded. */
 		if (engine->capture != NULL) {
 			snd_pcm_sframes_t heard = snd_pcm_readi(engine->capture, input,
 			                                        (snd_pcm_uframes_t)engine->frames);
 
-			if (heard == (snd_pcm_sframes_t)engine->frames) {
+			if (heard > 0) {
 				capture = input;
-			} else if (heard < 0) {
-				if (heard == -EPIPE || heard == -ESTRPIPE) {
-					snd_pcm_prepare(engine->capture);
-				}
+				capture_frames = (UInt32)heard;
+			} else if (heard == -EPIPE || heard == -ESTRPIPE) {
+				snd_pcm_prepare(engine->capture);
 			}
 		}
 
-		fn_agora_device_render(engine->device, capture, mix, engine->frames);
+		fn_agora_device_render(engine->device, capture, capture_frames, mix, engine->frames);
 
 		written = snd_pcm_writei(engine->playback, mix, (snd_pcm_uframes_t)engine->frames);
 		if (written < 0) {

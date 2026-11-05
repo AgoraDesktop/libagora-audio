@@ -1292,7 +1292,8 @@ OSStatus AudioDeviceGetNearestStartTime(AudioObjectID inDevice, AudioTimeStamp *
  * The mixer: what a driver's data thread calls.
  * ---------------------------------------------------------------------------------------------- */
 
-void fn_agora_device_render(AudioDeviceID id, const float *capture, float *mix, UInt32 frames)
+void fn_agora_device_render(AudioDeviceID id, const float *capture, UInt32 capture_frames, float *mix,
+                            UInt32 frames)
 {
 	agora_device *device = fn_device(id);
 	UInt32 channels;
@@ -1314,11 +1315,11 @@ void fn_agora_device_render(AudioDeviceID id, const float *capture, float *mix, 
 	/* **THE INPUT BELONGS TO THE CYCLE, NOT TO A CLIENT.** One capture buffer is taken for the whole device and
 	 * handed to every io proc unchanged, which is what a real device's input is: the same samples for everybody.
 	 * It is read-only for the same reason — a proc that wrote to it would be editing the microphone. */
-	if (capture != NULL) {
+	if (capture != NULL && capture_frames > 0) {
 		memset(&in_list, 0, sizeof(in_list));
 		in_list.mNumberBuffers = 1;
 		in_list.mBuffers[0].mNumberChannels = channels;
-		in_list.mBuffers[0].mDataByteSize = (UInt32)((size_t)total * sizeof(float));
+		in_list.mBuffers[0].mDataByteSize = (UInt32)((size_t)capture_frames * channels * sizeof(float));
 		in_list.mBuffers[0].mData = (void *)capture;
 		in_capture = &in_list;
 	}

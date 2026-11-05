@@ -56,7 +56,8 @@ AudioHardware.c          the object table, the property switch, the listeners, t
 AudioHardware-null.c     one device that exists everywhere, with a real data thread
 AudioHardware-alsa.c     the second backend: `snd_pcm_open` on a name, paced by its own writes,
                          and recording from the same name when that PCM can record
-AudioHardware-pipewire.c the third: the session's own server, its sinks, and one stream per started device
+AudioHardware-pipewire.c the third: the session's own server, its sinks, and two streams per started
+                         device — playback to a sink, capture from the session's default source
 AudioHardware-sndio.c    the fourth: the BSDs' sound server (written and compiled; not measured here)
 AudioHardwareDeprecated.c  the pre-10.7 doors, translated into the object API
 AudioQueue.c             buffers in, played frames out — and the same object filled from the device
@@ -190,9 +191,10 @@ cycle's client-format audio before the caller's buffer does — so a tap on a re
 played. A draining stop returns at once: a capture queue has nothing to play out. A capture queue's volume parameter is
 stored and not applied, since a recording has no playback gain.
 
-**The HAL grew an input side to make that testable.** `fn_agora_device_render` now takes the cycle's capture as well,
-hands it to every io proc as its `inInputData` (read-only: it is the microphone, and one buffer belongs to the whole
-cycle), and the null device — the one every build has — describes an input stream and *hears a ramp*: frame `n` of its
+**The HAL grew an input side to make that testable.** `fn_agora_device_render` now takes the cycle's capture as well —
+with **its own frame count**, because a session server's two directions are negotiated separately — and hands it to
+every io proc as its `inInputData` (read-only: it is the microphone, and one buffer belongs to the whole cycle), and
+the null device — the one every build has — describes an input stream and *hears a ramp*: frame `n` of its
 life is `(n % rate) / rate` on the left and half that on the right. A ramp rather than a tone because the question a
 capture test asks is not "is this audio" but "are these the frames, in this order, without a gap", and one subtraction
 answers it.
@@ -207,11 +209,25 @@ opens and returns the full quantum every cycle with every sample 0.0, because th
 machine's `default` PCM it returns **14 cycles of 512 frames in 150 ms** — the card's own clock — with the card's own
 samples. That is why the ALSA leg of the suite asserts *delivery* and the null backend asserts *values*.
 
-Still to come: capture in the other two drivers (a `PW_DIRECTION_INPUT` stream and `sio_open(..., SIO_REC, 0)` — the HAL
-and the queue are ready for them, and they answer `kAudioQueueErr_InvalidDevice` until then, honestly and by name),
-`AUGraph` sub-graphs (their Carbon doors are not declared), and `AudioFormat`'s `kAudioFormatProperty_FormatList` (the
-constant is in the manifest but its specifier's shape is not, so the door stays refused rather than guessed).
-`../AUDIO-PLAN.md` §9 is the schedule and §6 the header-by-header commitment.
+**PipeWire records from the session's default source, beside the sink it plays to.** A PipeWire device here is a
+sink, while playback and capture are different nodes (`Audio/Sink`, `Audio/Source`) — so the device a sink describes
+offers a capture stream too, autoconnected to whatever source the session calls default, with the graph's adapter
+bringing it to the device's channels and rate. `has_input` is true only when the server has at least one source node,
+which is the same "a description is not an answer" rule the sink list follows. Both streams' callbacks run on the same
+thread loop, so the capture callback leaves its quantum in the engine, the playback callback passes it to the mixer
+**once** — a source that stalls yields no input rather than the previous buffer for ever — and then clears it.
+
+**THE INPUT HAS ITS OWN LENGTH, AND IT HAD TO.** The graph negotiates the two quanta separately: MEASURED in this
+machine's session, the capture stream is given **1024-frame** quanta while the playback stream's buffers are **4096**.
+`fn_agora_device_render` therefore takes the input's frame count as well as the output's, and the io proc's
+`inInputData` is as long as what actually arrived. Before that, the driver bent one quantum to the other, which either
+dropped audio or claimed samples the device never heard.
+
+Still to come: capture in the last driver (`sio_open(..., SIO_REC, 0)` — the HAL and the queue are ready for it, and it
+answers `kAudioQueueErr_InvalidDevice` until then, honestly and by name), `AUGraph` sub-graphs (their Carbon doors are
+not declared), and `AudioFormat`'s `kAudioFormatProperty_FormatList` (the constant is in the manifest but its
+specifier's shape is not, so the door stays refused rather than guessed). `../AUDIO-PLAN.md` §9 is the schedule and §6
+the header-by-header commitment.
 
 The three PCM containers are ours rather than a library's: WAV is a little-endian chunk list, AIFF is a
 big-endian one with an 80-bit sample rate, and CAF is a big-endian chunk list with a 64-bit size. MPEG audio is
@@ -320,9 +336,10 @@ skips, exit 77, when there is none):
   libsndio 1.10.0 and no `sndiod` is listening. **The input side is measured on the null and ALSA legs**, because those
   are the two drivers that describe a capture stream: a default input device exists, it has one input-scope stream
   whose `kAudioStreamPropertyDirection` says input, and an io proc on it is handed a cycle of the device's input as
-  `inInputData`. On the null backend the samples are the device's ramp — every consecutive pair one step apart, so a
-  dropped or duplicated frame fails the assertion — and on ALSA the plugin or card chooses them, so that leg measures
-  delivery and says so.
+  `inInputData`. On the null backend the samples are the device's ramp — every consecutive pair one step apart, and
+  each cycle's first frame continuing from the last cycle's last, so a dropped or duplicated frame fails the assertion
+  either inside a buffer or at the seam between two. ALSA and PipeWire choose their own samples (a plugin's silence, a
+  room), so those legs measure delivery and say so.
 - **`unit`** — the registry finds a built-in and does not invent a fourth; an output unit with a callback
   renders 0.5 and the device measures it; a converter turns int16 0.25 into float32 0.25; a two-bus mixer sums
   0.25 + 0.125 to **0.375**, and halving one bus's volume halves its contribution; and a graph of mixer → output

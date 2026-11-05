@@ -9,6 +9,18 @@
  * THIS BACKEND IS A CLIENT OF PIPEWIRE, NOT A SOUND SERVER, which is the line this whole component draws: the
  * server owns the devices, this library presents them with Apple's face. So it enumerates what the registry
  * says are sinks, streams float32 stereo into the one it was asked for, and lets the server decide the clock,
+ * A DEVICE IS A SINK, AND ITS INPUT IS THE SESSION'S DEFAULT SOURCE. PipeWire models playback and capture as different
+ * nodes (`Audio/Sink`, `Audio/Source`), while this HAL's device is one object with two scopes — so the device the sinks
+ * describe offers a capture stream too, and that stream is autoconnected to whatever source the session calls default,
+ * with the graph's adapter bringing it to the device's channel count and rate. `has_input` is true only when the server
+ * has at least one source node, which is the same "a description is not an answer" rule the sink list follows.
+ *
+ * **THE TWO STREAMS RENDER ON ONE CYCLE, AND THE PLAYBACK ONE IS THE CLOCK.** Both callbacks run on the same thread
+ * loop, so the capture callback leaves its quantum in the engine and the playback callback passes the last one to the
+ * mixer — once, so a source that stalls yields no input rather than the same buffer for ever. When the two quanta
+ * disagree the cycle goes without input: the seam takes one frame count for both directions, and a half-filled input
+ * buffer would be a lie about the audio rather than a small loss of it.
+ *
  * the quantum and the resampling. Nothing here mixes, converts or resamples — `fn_agora_device_render` does
  * that, above the driver, exactly as it does for ALSA and the null device.
  *
@@ -66,6 +78,11 @@ typedef struct {
 	AudioDeviceID       device;
 	struct pw_stream *  stream;
 	struct spa_hook     stream_listener;	/* must outlive the stream it is added to */
+	struct pw_stream *  capture_stream;	/* NULL when the session has no source to record from */
+	struct spa_hook     capture_listener;
+	float *             capture;		/* the last quantum the source gave us */
+	UInt32              capture_capacity;	/* frames `capture` holds */
+	UInt32              captured_frames;	/* frames in it, 0 once the cycle has used them */
 	UInt32              channels;
 	UInt32              rate;
 } pw_engine;
@@ -88,6 +105,7 @@ static struct {
 
 	char                    default_sink[128];
 	UInt32                  sink_count;
+	UInt32                  source_count;	/* whether this session has anything to record from */
 	pw_sink                 sinks[AGORA_PW_MAX_SINKS];
 	pw_engine               engines[AGORA_PW_MAX_STREAMS];
 } g_pw;
@@ -186,7 +204,18 @@ static void fn_pw_on_global(void *data, uint32_t id, uint32_t permissions, const
 		const char *description = spa_dict_lookup(props, PW_KEY_NODE_DESCRIPTION);
 		pw_sink *sink;
 
-		if (media_class == NULL || strcmp(media_class, "Audio/Sink") != 0 || node_name == NULL) {
+		if (media_class == NULL || node_name == NULL) {
+			return;
+		}
+
+		/* A source is not a device here — the sinks are — but whether one exists is what decides whether a
+		 * recording is possible at all. */
+		if (strcmp(media_class, "Audio/Source") == 0) {
+			g_pw.source_count++;
+			return;
+		}
+
+		if (strcmp(media_class, "Audio/Sink") != 0) {
 			return;
 		}
 		if (g_pw.sink_count >= AGORA_PW_MAX_SINKS) {
@@ -391,7 +420,7 @@ static bool fn_pw_device_describe(UInt32 index, agora_device_desc *out)
 		out->nominal_rate = sink->rate;
 		out->buffer_frames = sink->quantum;
 		out->channels = sink->channels;
-		out->has_input = false;
+		out->has_input = g_pw.source_count > 0;
 		out->has_output = true;
 		out->terminal_type = kAudioStreamTerminalTypeSpeaker;
 		found = true;
@@ -454,7 +483,22 @@ static void fn_pw_on_process(void *data)
 				return;
 			}
 
-			fn_agora_device_render(engine->device, NULL, samples, frames);
+			/* **THE CAPTURE QUANTUM IS USED ONCE, AND ON ITS OWN TERMS.** It was left here by the input stream's
+			 * callback; taking it and clearing the count means a source that stalls leaves the next cycle without
+			 * input rather than replaying the one before it. The graph negotiates the two quanta separately, so the
+			 * input keeps its own length rather than being bent to this one. */
+			{
+				const float *capture = NULL;
+				UInt32 capture_frames = 0;
+
+				if (engine->capture != NULL && engine->captured_frames > 0) {
+					capture = engine->capture;
+					capture_frames = engine->captured_frames;
+					engine->captured_frames = 0;
+				}
+
+				fn_agora_device_render(engine->device, capture, capture_frames, samples, frames);
+			}
 
 			spa_buffer->datas[0].chunk->offset = 0;
 			spa_buffer->datas[0].chunk->stride = (int32_t)stride;
@@ -474,10 +518,49 @@ static void fn_pw_on_state_changed(void *data, enum pw_stream_state old, enum pw
 	(void)error;
 }
 
+/* The input stream's callback does not mix anything: it copies the quantum the server offered into the engine and
+ * hands the buffer straight back, untouched — an input buffer is read, not filled, and its bytes are the server's. */
+static void fn_pw_on_capture_process(void *data)
+{
+	pw_engine *engine = data;
+	struct pw_buffer *buffer;
+
+	if ((buffer = pw_stream_dequeue_buffer(engine->capture_stream)) == NULL) {
+		return;
+	}
+
+	{
+		struct spa_buffer *spa_buffer = buffer->buffer;
+
+		if (spa_buffer->n_datas > 0 && spa_buffer->datas[0].data != NULL
+		    && spa_buffer->datas[0].chunk != NULL) {
+			float *samples = spa_buffer->datas[0].data;
+			UInt32 stride = engine->channels * (UInt32)sizeof(float);
+			UInt32 frames = stride > 0 ? spa_buffer->datas[0].chunk->size / stride : 0;
+
+			if (frames > engine->capture_capacity) {
+				frames = engine->capture_capacity;
+			}
+			if (frames > 0) {
+				memcpy(engine->capture, samples, (size_t)frames * stride);
+				engine->captured_frames = frames;
+			}
+		}
+	}
+
+	pw_stream_queue_buffer(engine->capture_stream, buffer);
+}
+
 static const struct pw_stream_events kStreamEvents = {
 	PW_VERSION_STREAM_EVENTS,
 	.state_changed = fn_pw_on_state_changed,
 	.process = fn_pw_on_process
+};
+
+static const struct pw_stream_events kCaptureEvents = {
+	PW_VERSION_STREAM_EVENTS,
+	.state_changed = fn_pw_on_state_changed,
+	.process = fn_pw_on_capture_process
 };
 
 static bool fn_pw_start(AudioDeviceID id)
@@ -516,6 +599,15 @@ static bool fn_pw_start(AudioDeviceID id)
 			engine->channels = sink->channels;
 			engine->rate = sink->rate;
 
+			/* The mixer's slice, and more than the graph ever asks for: a quantum larger than this is clipped
+			 * rather than dropped, which is the same bound the playback callback uses. */
+			engine->capture_capacity = 4096;
+			engine->capture = calloc((size_t)engine->capture_capacity * engine->channels, sizeof(float));
+			if (engine->capture == NULL) {
+				pthread_mutex_unlock(&g_pw_lock);
+				return false;
+			}
+
 			properties = pw_properties_new(PW_KEY_MEDIA_TYPE, "Audio",
 			                               PW_KEY_MEDIA_CATEGORY, "Playback",
 			                               PW_KEY_MEDIA_ROLE, "Music",
@@ -552,7 +644,52 @@ static bool fn_pw_start(AudioDeviceID id)
 				}
 			}
 
+			/* The other direction of the same device, when the session has anything to record from: an input
+			 * stream autoconnects to the default *source*, and the graph's adapter brings it to the device's
+			 * format. It is optional — a session with no source still plays, and the cycle then goes without
+			 * input. */
+			if (started && g_pw.source_count > 0) {
+				struct pw_properties *input_properties;
+
+				input_properties = pw_properties_new(PW_KEY_MEDIA_TYPE, "Audio",
+				                                     PW_KEY_MEDIA_CATEGORY, "Capture",
+				                                     PW_KEY_MEDIA_ROLE, "Production",
+				                                     PW_KEY_NODE_NAME, "agora-audio-input",
+				                                     PW_KEY_NODE_DESCRIPTION, "Agora audio input",
+				                                     NULL);
+
+				engine->capture_stream = pw_stream_new(g_pw.core, "agora-audio-input", input_properties);
+				if (engine->capture_stream != NULL) {
+					pw_stream_add_listener(engine->capture_stream, &engine->capture_listener, &kCaptureEvents,
+					                       engine);
+
+					memset(&info, 0, sizeof(info));
+					info.format = SPA_AUDIO_FORMAT_F32;
+					info.rate = sink->rate;
+					info.channels = sink->channels;
+
+					spa_pod_builder_init(&builder, pod_buffer, sizeof(pod_buffer));
+					parameters[0] = spa_format_audio_raw_build(&builder, SPA_PARAM_EnumFormat, &info);
+					params[0] = parameters[0];
+
+					if (pw_stream_connect(engine->capture_stream, PW_DIRECTION_INPUT, PW_ID_ANY,
+					                      PW_STREAM_FLAG_AUTOCONNECT | PW_STREAM_FLAG_MAP_BUFFERS,
+					                      params, 1) < 0) {
+						pw_stream_destroy(engine->capture_stream);
+						engine->capture_stream = NULL;
+					}
+				}
+			}
+
 			pw_thread_loop_unlock(g_pw.loop);
+		}
+
+		/* A start that did not take leaves its slot unreachable (`fn_pw_engine` looks for a *running* engine), so
+		 * the buffer it allocated goes back now rather than at the next `memset` over the slot. */
+		if (!started && engine != NULL) {
+			free(engine->capture);
+			engine->capture = NULL;
+			engine->capture_capacity = 0;
 		}
 	}
 
@@ -562,25 +699,37 @@ static bool fn_pw_start(AudioDeviceID id)
 
 static void fn_pw_stop(AudioDeviceID id)
 {
-	struct pw_stream *stream = NULL;
+	pw_engine *engine;
 
 	pthread_mutex_lock(&g_pw_lock);
 
-	{
-		pw_engine *engine = fn_pw_engine(id);
+	engine = fn_pw_engine(id);
 
-		if (engine != NULL) {
-			stream = engine->stream;
-			engine->stream = NULL;
-			engine->running = false;
+	if (engine != NULL) {
+		struct pw_stream *stream = engine->stream;
+		struct pw_stream *capture_stream = engine->capture_stream;
+
+		engine->stream = NULL;
+		engine->capture_stream = NULL;
+		engine->captured_frames = 0;
+		engine->running = false;
+
+		if (stream != NULL || capture_stream != NULL) {
+			pw_thread_loop_lock(g_pw.loop);
+			if (capture_stream != NULL) {
+				pw_stream_disconnect(capture_stream);
+				pw_stream_destroy(capture_stream);
+			}
+			if (stream != NULL) {
+				pw_stream_disconnect(stream);
+				pw_stream_destroy(stream);
+			}
+			pw_thread_loop_unlock(g_pw.loop);
 		}
-	}
 
-	if (stream != NULL) {
-		pw_thread_loop_lock(g_pw.loop);
-		pw_stream_disconnect(stream);
-		pw_stream_destroy(stream);
-		pw_thread_loop_unlock(g_pw.loop);
+		free(engine->capture);
+		engine->capture = NULL;
+		engine->capture_capacity = 0;
 	}
 
 	pthread_mutex_unlock(&g_pw_lock);

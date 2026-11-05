@@ -127,7 +127,7 @@ static void *fn_null_thread(void *argument)
 		}
 
 		fn_null_capture(engine, capture, engine->frames);
-		fn_agora_device_render(engine->device, capture, mix, engine->frames);
+		fn_agora_device_render(engine->device, capture, engine->frames, mix, engine->frames);
 	}
 
 	free(mix);
