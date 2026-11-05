@@ -33,6 +33,7 @@
 
 static int fn_total;
 static int fn_failures;
+static bool fn_no_decoder;	/* set when the file door refuses the stream: this build has no MPEG decoder */
 
 static void fn_check(const char *what, int ok)
 {
@@ -202,9 +203,10 @@ static int fn_stream(const char *path, double rate, UInt32 channels, UInt32 samp
 	if (status == kAudioFileUnsupportedDataFormatError) {
 		/* The container was walked — every check above passed — and this build has no decoder for it, which is
 		 * what `-DAGORA_AUDIO_WITH_MPG123=OFF` is. A skip rather than a failure, said out loud. */
-		printf("skip  this build has no MPEG decoder (the container still reads)\n");
+		printf("skip  this build has no MPEG decoder; the container is measured, the audio is not\n");
+		fn_no_decoder = true;
 		CFRelease(url);
-		return 77;
+		return 0;
 	}
 	fn_check("the extended door opens the stream", status == 0 && ext != NULL);
 	if (status != 0) {
@@ -467,39 +469,259 @@ static SInt64 fake_size(void *client)
 	return (SInt64)sizeof(fake->bytes);
 }
 
-/* The stream door's two callbacks, which this suite never lets run: the file is refused before anything is heard. */
-static void fake_property(void *client, AudioFileStreamID stream, AudioFileStreamPropertyID property,
-                          UInt32 *flags)
+/* ------------------------------------------------------------------------------------------------
+ * The incremental door.
+ *
+ * **FED IN AWKWARD PIECES, ITS PACKETS MUST BE THE FILE DOOR'S PACKETS.** That is the whole assertion: the same bytes,
+ * the same boundaries, the same sample counts — because both derive them from the same four-byte header
+ * (`AudioMpeg.c`). A one-byte chunk is the worst case a network delivers, and a 4 096-byte one is the easy case; both
+ * must produce identical output, so the test feeds the file three times and compares every packet against a reference
+ * read by index through `AudioFile`.
+ * ---------------------------------------------------------------------------------------------- */
+
+typedef struct {
+	AudioFileID                 file;	/* the reference: opened with the file door, read packet by packet */
+	AudioStreamBasicDescription format;
+	bool                        have_format;
+	bool                        ready;
+	bool                        have_upper_bound;
+	UInt32                      upper_bound;
+	SInt64                      data_offset;
+	SInt64                      next_reference;
+	UInt32                      packets;
+	UInt32                      bytes;
+	long long                   samples;
+	int                         mismatches;
+} fn_stream_state;
+
+static void fn_stream_property(void *client, AudioFileStreamID stream, AudioFileStreamPropertyID property,
+                               AudioFileStreamPropertyFlags *flags)
 {
-	(void)client;
-	(void)stream;
-	(void)property;
+	fn_stream_state *state = client;
+	UInt32 size;
+
 	(void)flags;
+
+	if (property == kAudioFileStreamProperty_DataFormat) {
+		size = sizeof(state->format);
+		if (AudioFileStreamGetProperty(stream, property, &size, &state->format) == 0) {
+			state->have_format = true;
+		}
+	} else if (property == kAudioFileStreamProperty_DataOffset) {
+		size = sizeof(state->data_offset);
+		(void)AudioFileStreamGetProperty(stream, property, &size, &state->data_offset);
+	} else if (property == kAudioFileStreamProperty_PacketSizeUpperBound) {
+		size = sizeof(state->upper_bound);
+		if (AudioFileStreamGetProperty(stream, property, &size, &state->upper_bound) == 0) {
+			state->have_upper_bound = true;
+		}
+	} else if (property == kAudioFileStreamProperty_ReadyToProducePackets) {
+		state->ready = true;
+	}
 }
 
-static void fake_packets(void *client, UInt32 count, UInt32 bytes, const void *data,
-                         AudioStreamPacketDescription *descriptions)
+/* Read one packet by index through the file door, for comparison. */
+static bool fn_reference_packet(AudioFileID file, SInt64 index, UInt8 *buffer, UInt32 capacity,
+                                UInt32 *out_size, UInt32 *out_samples)
 {
-	(void)client;
-	(void)count;
-	(void)bytes;
-	(void)data;
-	(void)descriptions;
+	AudioStreamPacketDescription description;
+	UInt32 bytes = capacity;
+	UInt32 packets = 1;
+
+	memset(&description, 0, sizeof(description));
+	if (AudioFileReadPacketData(file, false, &bytes, &description, index, &packets, buffer) != 0
+	    || packets != 1) {
+		return false;
+	}
+	*out_size = bytes;
+	*out_samples = description.mVariableFramesInPacket;
+	return true;
 }
 
-/* The refusals, each by name, because a format that is read is not a format that is written and not a stream that
- * can be parsed incrementally. */
-static int fn_refusals(const char *path)
+static void fn_stream_packets(void *client, UInt32 bytes, UInt32 packets, const void *data,
+                              AudioStreamPacketDescription *descriptions)
+{
+	fn_stream_state *state = client;
+	UInt32 i;
+
+	state->bytes += bytes;
+	state->packets += packets;
+
+	for (i = 0; i < packets; i++) {
+		const AudioStreamPacketDescription *description = &descriptions[i];
+		UInt8 reference[4096];
+		UInt32 size = 0;
+		UInt32 samples = 0;
+
+		if (description->mStartOffset < 0
+		    || (UInt64)description->mStartOffset + description->mDataByteSize > bytes) {
+			state->mismatches++;
+			continue;
+		}
+		if (!fn_reference_packet(state->file, state->next_reference, reference, (UInt32)sizeof(reference),
+		                         &size, &samples)
+		    || size != description->mDataByteSize
+		    || samples != description->mVariableFramesInPacket
+		    || memcmp(reference, (const UInt8 *)data + description->mStartOffset, size) != 0) {
+			state->mismatches++;
+		}
+		state->samples += description->mVariableFramesInPacket;
+		state->next_reference++;
+	}
+}
+
+/* Feed the whole file (optionally behind a synthetic ID3v2 tag) in `chunk`-byte pieces. */
+static int fn_stream_parse(const char *path, double rate, UInt32 channels, UInt32 samples_per_frame,
+                           UInt32 chunk, bool with_tag)
+{
+	CFURLRef url = fn_url(path);
+	AudioFileStreamID stream = NULL;
+	AudioFileID file = NULL;
+	UInt64 reference_packets = 0;
+	UInt8 *raw = NULL;
+	UInt8 *all = NULL;
+	long file_size;
+	size_t got;
+	UInt32 offset = 0;
+	UInt32 size;
+	OSStatus status;
+	fn_stream_state state;
+	SInt64 expected_offset = 0;
+	FILE *handle;
+
+	printf("— %s, fed %u bytes at a time%s\n", path, chunk, with_tag ? ", behind an ID3v2 tag" : "");
+
+	status = AudioFileOpenURL(url, kAudioFileReadPermission, 0, &file);
+	if (status != 0) {
+		CFRelease(url);
+		return 77;
+	}
+	size = sizeof(reference_packets);
+	(void)AudioFileGetProperty(file, kAudioFilePropertyAudioDataPacketCount, &size, &reference_packets);
+
+	/* **THE FIXTURE HAS A TAG OF ITS OWN** (ffmpeg writes an encoder ID3v2 block), so the expected data offset comes
+	 * from the file door rather than from an assumption that the audio starts at byte zero. */
+	{
+		SInt64 audio_start = 0;
+
+		size = sizeof(audio_start);
+		(void)AudioFileGetProperty(file, kAudioFilePropertyDataOffset, &size, &audio_start);
+		expected_offset = audio_start;
+	}
+
+	handle = fopen(path, "rb");
+	if (handle == NULL) {
+		AudioFileClose(file);
+		CFRelease(url);
+		return 77;
+	}
+	fseek(handle, 0, SEEK_END);
+	file_size = ftell(handle);
+	fseek(handle, 0, SEEK_SET);
+	raw = malloc((size_t)file_size);
+	got = (raw != NULL) ? fread(raw, 1, (size_t)file_size, handle) : 0;
+	fclose(handle);
+	if (got != (size_t)file_size) {
+		free(raw);
+		AudioFileClose(file);
+		CFRelease(url);
+		return 1;
+	}
+
+	{
+		UInt32 tag = with_tag ? 210 : 0;	/* a 10-byte header declaring 200 bytes of filler */
+		UInt32 total = (UInt32)file_size + tag;
+
+		all = malloc(total);
+		if (all == NULL) {
+			free(raw);
+			AudioFileClose(file);
+			CFRelease(url);
+			return 1;
+		}
+		if (with_tag) {
+			/* **THE FILLER IS 0xFF, WHICH IS THE POINT**: a walker that trusted sync bytes inside a tag would
+			 * index the filler as audio, and the shared walker refuses to. */
+			memset(all, 0xFF, tag);
+			all[0] = 'I';
+			all[1] = 'D';
+			all[2] = '3';
+			all[3] = 4;			/* v2.4, which is what writes a footer flag */
+			all[5] = 0;
+			all[6] = 0;
+			all[7] = 0;
+			all[8] = (UInt8)(200 >> 7);	/* 28-bit syncsafe size: 200 = 1 * 128 + 72 */
+			all[9] = (UInt8)(200 & 0x7F);
+		}
+		memcpy(all + tag, raw, (size_t)file_size);
+	}
+
+	memset(&state, 0, sizeof(state));
+	state.file = file;
+
+	status = AudioFileStreamOpen(&state, fn_stream_property, fn_stream_packets, 0, &stream);
+	if (status != 0) {
+		free(raw);
+		free(all);
+		AudioFileClose(file);
+		CFRelease(url);
+		return 1;
+	}
+
+	{
+		UInt32 total = (UInt32)file_size + (with_tag ? 210 : 0);
+
+		while (offset < total) {
+			UInt32 piece = (total - offset < chunk) ? (total - offset) : chunk;
+
+			status = AudioFileStreamParseBytes(stream, piece, all + offset, 0);
+			if (status != 0) {
+				break;
+			}
+			offset += piece;
+		}
+	}
+
+	fn_check("the incremental door reports the format", status == 0 && state.have_format);
+	fn_check("the incremental format is the file's",
+	         state.format.mFormatID == kAudioFormatMPEGLayer3 && state.format.mSampleRate == rate
+	         && state.format.mChannelsPerFrame == channels
+	         && state.format.mFramesPerPacket == samples_per_frame
+	         && state.format.mBytesPerPacket == 0);
+	fn_check("the incremental door becomes ready", state.ready);
+	printf("      data offset %lld (expected %lld)\n", (long long)state.data_offset,
+	       (long long)(expected_offset + (with_tag ? 210 : 0)));
+	fn_check("the data offset is where the audio starts",
+	         state.data_offset == expected_offset + (with_tag ? 210 : 0));
+	fn_check("the packet size bound is the format's largest frame",
+	         state.have_upper_bound && state.upper_bound >= 100 && state.upper_bound <= 2000);
+	printf("      %u packets reported, %llu in the container, %lld bytes\n",
+	       state.packets, (unsigned long long)reference_packets, (long long)state.bytes);
+	fn_check("every packet of the file is reported",
+	         state.packets == (UInt32)reference_packets
+	         && state.next_reference == (SInt64)reference_packets);
+	fn_check("every reported packet is the file door's packet, byte for byte",
+	         state.mismatches == 0);
+	fn_check("the reported samples are the packet count times the frame's",
+	         state.samples == (long long)reference_packets * (long long)samples_per_frame);
+
+	AudioFileStreamClose(stream);
+	free(raw);
+	free(all);
+	AudioFileClose(file);
+	CFRelease(url);
+	return (status == 0 && state.mismatches == 0) ? 0 : 1;
+}
+
+/* The refusals, each by name, because a format that is read is not a format that is written, and because a file
+ * that only looks like one must not be accepted. */
+static int fn_refusals(void)
 {
 	CFURLRef out = fn_url("/tmp/agora-mp3-write-probe.mp3");
 	fn_fake fake;
 	AudioStreamBasicDescription format;
 	AudioFileID file = NULL;
-	AudioFileStreamID stream = NULL;
 	OSStatus status;
-	FILE *handle;
-	UInt8 bytes[4096];
-	size_t got;
 
 	memset(&fake, 0, sizeof(fake));
 	fake.bytes[0] = 0xFF;
@@ -524,22 +746,6 @@ static int fn_refusals(const char *path)
 	}
 	CFRelease(out);
 
-	/* The incremental door still parses only the three containers: this door has no MPEG walker. */
-	{
-		status = AudioFileStreamOpen(NULL, fake_property, fake_packets, 0, &stream);
-		fn_check("the incremental door opens", status == 0 && stream != NULL);
-
-		handle = fopen(path, "rb");
-		got = (handle != NULL) ? fread(bytes, 1, sizeof(bytes), handle) : 0;
-		if (handle != NULL) {
-			fclose(handle);
-		}
-		status = AudioFileStreamParseBytes(stream, (UInt32)got, bytes, 0);
-		fn_check("an MPEG stream is refused by the incremental door", status != 0);
-		if (stream != NULL) {
-			AudioFileStreamClose(stream);
-		}
-	}
 
 	/* And the file door refuses bytes that only look like a sync word: a real MPEG-1 Layer III header followed by
 	 * zeroes is a walker's worst case, because the first four bytes pass every check. */
@@ -568,18 +774,36 @@ int main(int argc, char **argv)
 
 	skipped += (fn_stream(argv[1], 44100.0, 2, 1152, 440.0, 3.0) == 77) ? 1 : 0;
 	skipped += (fn_stream(argv[2], 22050.0, 1, 576, 330.0, 2.0) == 77) ? 1 : 0;
+	/* A missing decoder is not a missing fixture: the container checks ran, and the legs below do not need one. */
 
 	if (skipped == 2) {
 		printf("skip  no fixtures\n");
 		return 77;
 	}
 
-	if (skipped == 0) {
-		fn_rate_change(argv[1], 44100.0, 440.0);
-		fn_seek(argv[1], 44100.0, 2, 440.0, 3.0);
-		fn_refusals(argv[1]);
+	if (skipped < 2) {
+		/* **THE INCREMENTAL DOOR NEEDS NO DECODER**: it walks frame headers, so it is measured even on a build
+		 * with `-DAGORA_AUDIO_WITH_MPG123=OFF`. Only the legs that play audio are conditional. */
+		fn_stream_parse(argv[1], 44100.0, 2, 1152, 1, false);
+		fn_stream_parse(argv[1], 44100.0, 2, 1152, 7, true);
+		fn_stream_parse(argv[2], 22050.0, 1, 576, 4096, false);
+
+		if (!fn_no_decoder) {
+			fn_rate_change(argv[1], 44100.0, 440.0);
+			fn_seek(argv[1], 44100.0, 2, 440.0, 3.0);
+		}
+		fn_refusals();
 	}
 
 	printf("\n%d check(s), %d failure(s)\n", fn_total, fn_failures);
-	return fn_failures == 0 ? 0 : 1;
+	if (fn_failures != 0) {
+		return 1;
+	}
+	/* **A SUITE THAT COULD NOT PLAY THE AUDIO IS A SKIP, NOT A PASS**, even though everything it could measure
+	 * passed: `-DAGORA_AUDIO_WITH_MPG123=OFF` is a real configuration and this is what it is worth. */
+	if (fn_no_decoder) {
+		printf("skip  no MPEG decoder in this build\n");
+		return 77;
+	}
+	return 0;
 }

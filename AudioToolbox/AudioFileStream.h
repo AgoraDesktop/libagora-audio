@@ -12,11 +12,17 @@
  * does the audio start) through a listener, and then hands over audio as packets through another.
  *
  * SPECIFIED BY macOS 10.12: the two callbacks, the three flags, the property selectors, the error codes and
- * the prototypes are the reference's. What is implemented here is the same three containers `AudioFile.h`
- * reads, in their streaming form, linear PCM only.
+ * the prototypes are the reference's. What is implemented here is the same four containers `AudioFile.h` reads,
+ * in their streaming form: the three PCM ones, and MPEG audio, which has no header at all and is therefore the
+ * one case where a packet's boundaries are reported rather than computed.
  *
- * `AudioFileStreamSeek` is declared and refuses: seeking a stream needs the packet table that a compressed
- * file carries, and there is none here.
+ * **AN MPEG PACKET NEEDS ITS DESCRIPTION.** A WAV or CAF stream is constant-bitrate, so its packets have no
+ * descriptions and the callback's last argument is NULL; an MPEG frame's length is in its own header, so every
+ * packet arrives with an `AudioStreamPacketDescription` saying where it starts, how big it is and how many samples
+ * it holds. That is the difference a caller has to handle, and it is Apple's, not this implementation's.
+ *
+ * `AudioFileStreamSeek` is declared and refuses: seeking a stream needs the packet table, and a stream being fed
+ * has no index of what it has not yet seen.
  */
 #ifndef AGORA_AUDIOTOOLBOX_AUDIOFILESTREAM_H
 #define AGORA_AUDIOTOOLBOX_AUDIOFILESTREAM_H

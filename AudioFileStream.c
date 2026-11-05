@@ -44,6 +44,13 @@ struct OpaqueAudioFileStreamID {
 	SInt64                              data_bytes;	/* -1 when the container did not say */
 	bool                                notified_format;
 	bool                                notified_ready;
+
+	/* **AN MPEG STREAM HAS NO HEADER, SO "READY" MEANS "THE FIRST FRAME HEADER PARSED".** Everything after it is
+	 * frames, and their sizes differ, so each one is reported with a packet description of its own — the one case
+	 * where a caller cannot compute the boundaries for itself. */
+	bool                                mpeg;
+	AudioStreamPacketDescription *      descriptions;	/* RETAINED: one per frame in the buffer, grown as needed */
+	UInt32                              description_capacity;
 };
 
 /* ------------------------------------------------------------------------------------------------
@@ -252,6 +259,135 @@ static int fn_stream_caf(AudioFileStreamID stream)
  * Notifying, and handing over audio.
  * ---------------------------------------------------------------------------------------------- */
 
+/* **THE HEADER IS THE FIRST FRAME'S HEADER, AND REACHING IT MEANS SKIPPING WHAT IS NOT AUDIO.** An ID3v2 tag is
+ * skipped by its own size (it may contain sync words), and any other bytes before the first real frame are resynced
+ * one at a time. The return is the same as the container parsers': 0 done, 1 need more bytes, else an error. */
+static int fn_stream_mpeg(AudioFileStreamID stream)
+{
+	for (;;) {
+		UInt32 tag = 0;
+		int has_tag;
+		UInt32 position;
+		fn_mpeg_frame frame;
+
+		has_tag = fn_mpeg_id3v2_length(stream->buffer, stream->length, &tag);
+		if (has_tag < 0) {
+			return 1;		/* the tag's size is still to come */
+		}
+		if (has_tag == 1) {
+			if (stream->length < tag) {
+				return 1;	/* wait for the whole tag rather than walking inside it */
+			}
+			/* **EVERY BYTE DROPPED MOVES THE STREAM, AND `buffer_start` IS THE ONLY RECORD OF THAT.** Counting
+			 * the tag separately as well as moving the buffer would double-count it, and the reported data
+			 * offset is the one number a caller uses to find the audio again. */
+			memmove(stream->buffer, stream->buffer + tag, stream->length - tag);
+			stream->length -= tag;
+			stream->buffer_start += (SInt64)tag;
+			continue;
+		}
+
+		for (position = 0; position + 4 <= stream->length; position++) {
+			if (fn_mpeg_frame_header(stream->buffer, stream->length, position, &frame)) {
+				break;
+			}
+		}
+
+		if (position + 4 > stream->length) {
+			/* Nothing in the buffer parses. Keep the last three bytes — a header can straddle the boundary — and
+			 * wait for more, but only up to a point: an unbounded buffer of garbage is a caller's bug, not a
+			 * stream to resynchronise. */
+			UInt32 keep = (stream->length < 3) ? stream->length : 3;
+
+			if (stream->length > (1u << 20)) {
+				return kAudioFileStreamError_InvalidFile;
+			}
+			stream->buffer_start += (SInt64)(stream->length - keep);
+			memmove(stream->buffer, stream->buffer + stream->length - keep, keep);
+			stream->length = keep;
+			return 1;
+		}
+
+		memset(&stream->asbd, 0, sizeof(stream->asbd));
+		stream->asbd.mSampleRate = (Float64)frame.rate;
+		stream->asbd.mFormatID = kAudioFormatMPEGLayer3;
+		stream->asbd.mChannelsPerFrame = frame.channels;
+		stream->asbd.mFramesPerPacket = frame.samples;
+		/* Bytes per packet and per frame stay ZERO: a frame's length is in its own header. */
+
+		stream->data_offset = stream->buffer_start + (SInt64)position;
+		stream->data_bytes = -1;	/* a stream never knows how much audio is still coming */
+
+		/* The bytes before the first frame are not audio and never will be. */
+		if (position > 0) {
+			memmove(stream->buffer, stream->buffer + position, stream->length - position);
+			stream->length -= position;
+		}
+		return 0;
+	}
+}
+
+/* **A COMPRESSED STREAM IS EMITTED BY THE FRAME, BECAUSE THAT IS THE ONLY UNIT IT HAS.** Every complete frame in the
+ * buffer becomes one packet, with a description saying where it starts and how many samples it holds; a frame that
+ * straddles the end of the buffer waits for the next call, and a byte that starts no frame is skipped one at a time
+ * until audio is found again. */
+static void fn_emit_mpeg(AudioFileStreamID stream)
+{
+	UInt32 available = stream->length;
+	UInt32 position = 0;
+	UInt32 count = 0;
+
+	while (position + 4 <= available) {
+		fn_mpeg_frame frame;
+
+		if (!fn_mpeg_frame_header(stream->buffer, available, position, &frame)) {
+			break;
+		}
+		if ((Float64)frame.rate != stream->asbd.mSampleRate
+		    || frame.channels != stream->asbd.mChannelsPerFrame
+		    || frame.samples != stream->asbd.mFramesPerPacket) {
+			break;		/* a frame that disagrees with the description is not part of this stream */
+		}
+		if (position + frame.size > available) {
+			break;		/* incomplete: the rest of it arrives in the next call */
+		}
+
+		if (count == stream->description_capacity) {
+			UInt32 grown = (stream->description_capacity == 0) ? 64 : stream->description_capacity * 2;
+			AudioStreamPacketDescription *grown_descriptions =
+			    realloc(stream->descriptions, (size_t)grown * sizeof(*grown_descriptions));
+
+			if (grown_descriptions == NULL) {
+				break;	/* emit what is described so far rather than losing it */
+			}
+			stream->descriptions = grown_descriptions;
+			stream->description_capacity = grown;
+		}
+
+		stream->descriptions[count].mStartOffset = (SInt64)position;
+		stream->descriptions[count].mDataByteSize = frame.size;
+		stream->descriptions[count].mVariableFramesInPacket = frame.samples;
+		count++;
+		position += frame.size;
+	}
+
+	if (count == 0) {
+		/* No complete frame yet. If the head cannot even start one, it is not audio: resynchronise by one byte. */
+		if (available >= 4 && !fn_mpeg_frame_header(stream->buffer, available, 0, NULL)) {
+			memmove(stream->buffer, stream->buffer + 1, available - 1);
+			stream->length = available - 1;
+			stream->buffer_start += 1;
+		}
+		return;
+	}
+
+	stream->packets(stream->client, position, count, stream->buffer, stream->descriptions);
+
+	memmove(stream->buffer, stream->buffer + position, available - position);
+	stream->length = available - position;
+	stream->buffer_start += position;
+}
+
 static void fn_notify(AudioFileStreamID stream, AudioFileStreamPropertyID property)
 {
 	AudioFileStreamPropertyFlags flags = 0;
@@ -263,8 +399,18 @@ static void fn_notify(AudioFileStreamID stream, AudioFileStreamPropertyID proper
 
 static void fn_emit(AudioFileStreamID stream)
 {
-	UInt32 bytes_per_frame = fn_pcm_bytes_per_frame(&stream->asbd);
-	SInt64 audio_start = stream->data_offset - stream->buffer_start;
+	UInt32 bytes_per_frame;
+	SInt64 audio_start;
+
+	/* **A FRAME IS NOT A FIXED NUMBER OF BYTES, SO A COMPRESSED STREAM HAS ITS OWN EMITTER.** Everything below is
+	 * arithmetic on `mBytesPerFrame`, which an MPEG frame does not have. */
+	if (stream->mpeg) {
+		fn_emit_mpeg(stream);
+		return;
+	}
+
+	bytes_per_frame = fn_pcm_bytes_per_frame(&stream->asbd);
+	audio_start = stream->data_offset - stream->buffer_start;
 
 	if (bytes_per_frame == 0) {
 		return;
@@ -353,6 +499,7 @@ OSStatus AudioFileStreamClose(AudioFileStreamID inAudioFileStream)
 	}
 
 	free(inAudioFileStream->buffer);
+	free(inAudioFileStream->descriptions);
 	free(inAudioFileStream);
 	return 0;
 }
@@ -393,9 +540,11 @@ OSStatus AudioFileStreamParseBytes(AudioFileStreamID inAudioFileStream, UInt32 i
 	if (!stream->header_done) {
 		if (stream->type == 0) {
 			/* The magic is the only honest source for "which container is this", and it fits in eight
-			 * bytes, but a caller may have handed over fewer. */
+			 * bytes, but a caller may have handed over fewer. **"NOT ENOUGH YET" IS NOT AN ERROR**: a caller
+			 * feeding a stream one byte at a time must keep being able to, and `DataUnavailable` would stop
+			 * every one of them. It is a property's answer, not the parser's. */
 			if (stream->length < 4) {
-				return kAudioFileStreamError_DataUnavailable;
+				return 0;
 			}
 
 			if (memcmp(stream->buffer, "RIFF", 4) == 0) {
@@ -404,6 +553,11 @@ OSStatus AudioFileStreamParseBytes(AudioFileStreamID inAudioFileStream, UInt32 i
 				stream->type = kAudioFileAIFFType;
 			} else if (memcmp(stream->buffer, "caff", 4) == 0) {
 				stream->type = kAudioFileCAFType;
+			} else if ((stream->buffer[0] == 'I' && stream->buffer[1] == 'D' && stream->buffer[2] == '3')
+			           || (stream->buffer[0] == 0xFF && (stream->buffer[1] & 0xE0) == 0xE0)) {
+				/* **A TAG, OR A SYNC WORD: THOSE ARE AN MPEG STREAM'S ONLY TWO OPENINGS**, and neither is a
+				 * four-character magic. The full check is `fn_stream_mpeg`'s; this only decides whose. */
+				stream->type = kAudioFileMP3Type;
 			} else {
 				return kAudioFileStreamError_UnsupportedFileType;
 			}
@@ -413,6 +567,7 @@ OSStatus AudioFileStreamParseBytes(AudioFileStreamID inAudioFileStream, UInt32 i
 		case kAudioFileWAVEType:  result = fn_stream_wav(stream); break;
 		case kAudioFileAIFFType:  result = fn_stream_aiff(stream); break;
 		case kAudioFileCAFType:   result = fn_stream_caf(stream); break;
+		case kAudioFileMP3Type:   result = fn_stream_mpeg(stream); break;
 		default:                  return kAudioFileStreamError_UnsupportedFileType;
 		}
 
@@ -423,9 +578,13 @@ OSStatus AudioFileStreamParseBytes(AudioFileStreamID inAudioFileStream, UInt32 i
 			return (OSStatus)result;
 		}
 
-		if (stream->asbd.mFormatID != kAudioFormatLinearPCM) {
+		/* **MPEG IS THE ONE COMPRESSED FORMAT WITH A DECODER BEHIND IT**, so it is the one that is not refused
+		 * here: `ExtAudioFile` decodes it, and a streamed MP3 is the shape a player wants most. */
+		if (stream->asbd.mFormatID != kAudioFormatLinearPCM
+		    && stream->asbd.mFormatID != kAudioFormatMPEGLayer3) {
 			return kAudioFileStreamError_UnsupportedDataFormat;
 		}
+		stream->mpeg = (stream->asbd.mFormatID == kAudioFormatMPEGLayer3);
 
 		stream->header_done = true;
 
@@ -543,7 +702,9 @@ OSStatus AudioFileStreamGetProperty(AudioFileStreamID inAudioFileStream,
 
 	case kAudioFileStreamProperty_PacketSizeUpperBound:
 		if (*ioPropertyDataSize < sizeof(UInt32)) { return kAudioFileStreamError_BadPropertySize; }
-		*(UInt32 *)outPropertyData = fn_pcm_bytes_per_frame(&stream->asbd);
+		/* An MPEG frame's largest possible size is a fact about the rate; a PCM frame's is its own size. */
+		*(UInt32 *)outPropertyData = stream->mpeg ? fn_mpeg_packet_size_upper_bound(&stream->asbd)
+		                                          : fn_pcm_bytes_per_frame(&stream->asbd);
 		*ioPropertyDataSize = sizeof(UInt32);
 		return 0;
 

@@ -115,6 +115,7 @@ add_library(Audio SHARED
     "${CMAKE_CURRENT_SOURCE_DIR}/HostTime.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/AudioFormat.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/AudioCodec.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/AudioMpeg.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/AudioResampler.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/AudioConverter.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/AudioFile.c"

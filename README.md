@@ -114,11 +114,18 @@ stream's first frame. That is also why the container's packet count is *larger* 
 encoder pads to whole frames and libmpg123 trims the padding it declares. Both numbers are asserted, separately, by
 `tests/mp3.c`.
 
-Two limits are worth naming. `AudioFileStream` — the incremental door — still reads only the three PCM containers, so
-a network stream of MP3 is refused there (and the suite measures that refusal rather than describing it). Writing is
-refused too: there is no encoder, and `AudioFileCreateWithURL` answers `kAudioFileUnsupportedFileTypeError` for
-`kAudioFileMP3Type`. The fixtures the suite reads are `ffmpeg`'s output, written when the suite is configured; with no
-`ffmpeg` the test reports a skip instead of disappearing.
+**The incremental door reads MPEG too, and it is the door that needed the packet descriptions most.** A frame's length
+is in its own header, so a streamed MP3 reports every packet with an `AudioStreamPacketDescription` — where it starts,
+its size and its 1152 or 576 samples — where a PCM stream's packets have none. Fed a byte at a time, seven bytes at a
+time or a buffer at a time, `tests/mp3.c` compares every packet against the file door's: 117 of 117 and 80 of 80,
+byte for byte, with the audio's offset correctly past ffmpeg's own tag and past a synthetic one whose 200 bytes of
+0xFF filler are the sync words a naive walker would index as audio.
+
+Two limits are worth naming. Writing is refused: there is no encoder, and `AudioFileCreateWithURL` answers
+`kAudioFileUnsupportedFileTypeError` for `kAudioFileMP3Type`. And a stream reports no packet count — an MP3 carries one
+only in a Xing/LAME header, which this door does not parse — so `kAudioFileStreamProperty_AudioDataPacketCount` answers
+`ValueUnknown` for it, while the file door knows the count exactly. The fixtures the suite reads are `ffmpeg`'s output,
+written when the suite is configured; with no `ffmpeg` the test reports a skip instead of disappearing.
 
 **Phase 6a — sndio, the BSDs' server: WRITTEN, COMPILED HERE, NOT MEASURED HERE.** `AudioHardware-sndio.c` is
 the fourth backend and the one this tree cannot exercise where it is developed: `libsndio-dev` 1.10.0 is

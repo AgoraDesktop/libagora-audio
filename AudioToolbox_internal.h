@@ -71,6 +71,34 @@ void        fn_codec_reset(AudioCodec *codec);
 UInt32      fn_codec_decode(AudioCodec *codec, const void *bytes, UInt32 byte_count,
                             float *out, UInt32 capacity, UInt32 *out_channels);
 
+/* ------------------------------------------------------------------------------------------------
+ * The MPEG frame header.
+ *
+ * **ONE FOUR-BYTE HEADER, TWO DOORS THAT WALK IT**: `AudioFile.c` indexes a whole file and `AudioFileStream.c`
+ * reports packets as they arrive, and they must agree about what a frame is. There is nothing to keep in sync
+ * between them because there is nothing to keep: a frame header is a pure function of its four bytes, and the
+ * length it implies is the caller's to check against the bytes it actually holds.
+ * ---------------------------------------------------------------------------------------------- */
+typedef struct fn_mpeg_frame {
+	UInt32 version;	/* 3 = MPEG-1, 2 = MPEG-2, 0 = MPEG-2.5 (1 is reserved and never returned) */
+	UInt32 bitrate;	/* kbit/s, from the table index */
+	UInt32 rate;	/* Hz */
+	UInt32 channels;	/* 1 for single-channel mode, 2 for every other mode */
+	UInt32 samples;	/* samples per frame: 1152 for MPEG-1, 576 for MPEG-2 and 2.5 */
+	UInt32 size;	/* the frame's length in bytes, its padding included */
+} fn_mpeg_frame;
+
+/* Parse the header at `at` out of `available` bytes. False when those bytes are not a Layer III header this door
+ * reads, or when a reserved field value says the sync word was a coincidence. */
+bool   fn_mpeg_frame_header(const uint8_t *data, UInt32 available, UInt32 at, fn_mpeg_frame *out);
+
+/* 1 with `out_length` filled when an ID3v2 tag begins here, 0 when it does not, -1 when more bytes are needed to
+ * answer. The caller skips the tag by this length; the tag may contain anything, including sync words. */
+int    fn_mpeg_id3v2_length(const uint8_t *data, UInt32 available, UInt32 *out_length);
+
+/* The largest frame bytes-per-frame this rate and samples-per-frame allow, for a stream's `PacketSizeUpperBound`. */
+UInt32 fn_mpeg_packet_size_upper_bound(const AudioStreamBasicDescription *asbd);
+
 /* Read one frame from `src` into interleaved float32; write one frame from interleaved float32 into
  * `dst`. Both take the *frame* stride the description implies. */
 void fn_pcm_frame_to_float(const AudioStreamBasicDescription *asbd, const uint8_t *src, float *dst);

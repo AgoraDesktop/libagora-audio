@@ -635,78 +635,25 @@ static OSStatus fn_caf_create(AudioFileID file, const AudioStreamBasicDescriptio
  * wrong by minutes on a VBR file — so this door does not offer it.
  * ---------------------------------------------------------------------------------------------- */
 
-/* kbit/s by index, for MPEG-1 and for MPEG-2/2.5. Index 0 is "free" and 15 is "bad", and both are refused. */
-static const uint32_t fn_mp3_bitrates_mpeg1[16] = { 0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 0 };
-static const uint32_t fn_mp3_bitrates_mpeg2[16] = { 0,  8, 16, 24, 32, 40, 48, 56,  64,  80,  96, 112, 128, 144, 160, 0 };
-
-/* Hz by version and index. Version 1 is reserved, and index 3 is reserved at every version. */
-static const uint32_t fn_mp3_rates[4][3] = {
-	{ 11025, 12000, 8000 },		/* MPEG 2.5 */
-	{ 0, 0, 0 },			/* reserved */
-	{ 22050, 24000, 16000 },	/* MPEG 2 */
-	{ 44100, 48000, 32000 }		/* MPEG 1 */
-};
-
 typedef struct {
-	SInt64   offset;
-	UInt32   size;
-	uint32_t rate;
-	uint32_t channels;
-	uint32_t samples;		/* samples per frame: 1152 for MPEG-1, 576 for MPEG-2 and 2.5 */
+	SInt64       offset;
+	fn_mpeg_frame frame;	/* the header, parsed by `AudioMpeg.c` and shared with the incremental door */
 } fn_mp3_frame;
 
-/* One frame's header at `at`, or false when those four bytes are not a Layer III frame this door reads. */
+/* One COMPLETE frame at `at`: its header parses, and the whole frame is inside the file. A truncated final frame is
+ * not a packet — an MP3 whose last frame is cut off is a file with a shorter last packet, not a broken file. */
 static bool fn_mp3_frame_at(const uint8_t *data, SInt64 file_size, SInt64 at, fn_mp3_frame *out)
 {
-	uint32_t b1, b2, b3;
-	uint32_t version, layer, bitrate_index, rate_index, padding, mode, bitrate, rate, samples;
-	SInt64 length;
-
-	if (at + 4 > file_size) {
+	if (at < 0 || at > file_size || file_size - at > (SInt64)0xFFFFFFFF) {
 		return false;
 	}
-	if (data[at] != 0xFF || (data[at + 1] & 0xE0) != 0xE0) {
+	if (!fn_mpeg_frame_header(data, (UInt32)file_size, (UInt32)at, &out->frame)) {
 		return false;
 	}
-	b1 = data[at + 1];
-	b2 = data[at + 2];
-	b3 = data[at + 3];
-
-	version = (b1 >> 3) & 0x03;		/* 3 = MPEG-1, 2 = MPEG-2, 0 = MPEG-2.5, 1 = reserved */
-	layer = (b1 >> 1) & 0x03;		/* 1 = Layer III */
-	if (version == 1 || layer != 1) {
+	if (at + (SInt64)out->frame.size > file_size) {
 		return false;
 	}
-
-	bitrate_index = (b2 >> 4) & 0x0F;
-	rate_index = (b2 >> 2) & 0x03;
-	padding = (b2 >> 1) & 0x01;
-	if (bitrate_index == 0 || bitrate_index == 15 || rate_index == 3) {
-		return false;
-	}
-
-	bitrate = (version == 3) ? fn_mp3_bitrates_mpeg1[bitrate_index] : fn_mp3_bitrates_mpeg2[bitrate_index];
-	rate = fn_mp3_rates[version][rate_index];
-	if (bitrate == 0 || rate == 0) {
-		return false;
-	}
-
-	mode = (b3 >> 6) & 0x03;
-	samples = (version == 3) ? 1152 : 576;
-
-	/* The frame length every MPEG-1 Layer III table gives: floor(144 x bitrate / rate) + padding, and half of
-	 * the coefficient for MPEG-2/2.5 because its frames hold half the samples. */
-	length = ((version == 3) ? (144 * (SInt64)bitrate * 1000 / (SInt64)rate)
-	                          : ( 72 * (SInt64)bitrate * 1000 / (SInt64)rate)) + (SInt64)padding;
-	if (length < 4 || at + length > file_size) {
-		return false;			/* a truncated final frame is not a packet */
-	}
-
 	out->offset = at;
-	out->size = (UInt32)length;
-	out->rate = rate;
-	out->channels = (mode == 3) ? 1 : 2;	/* mode 3 is single-channel; every other mode is two */
-	out->samples = samples;
 	return true;
 }
 
@@ -723,7 +670,7 @@ static bool fn_mp3_push(AudioFileID file, const fn_mp3_frame *frame)
 		file->packet_capacity = grown;
 	}
 	file->packet_table[file->packet_count].offset = frame->offset;
-	file->packet_table[file->packet_count].size = frame->size;
+	file->packet_table[file->packet_count].size = frame->frame.size;
 	file->packet_count++;
 	return true;
 }
@@ -757,13 +704,11 @@ static OSStatus fn_mp3_parse(AudioFileID file)
 
 	/* **AN ID3v2 TAG IS SKIPPED BY ITS OWN SIZE FIELD, before any sync is looked for**: it is allowed to contain
 	 * 0xFF bytes, and a walk that started inside one would index 100 KB of artwork as audio. */
-	if (file_size >= 10 && data[0] == 'I' && data[1] == 'D' && data[2] == '3') {
-		SInt64 tag_size = ((SInt64)(data[6] & 0x7F) << 21) | ((SInt64)(data[7] & 0x7F) << 14)
-		                | ((SInt64)(data[8] & 0x7F) << 7) | (SInt64)(data[9] & 0x7F);
-		SInt64 skip = 10 + tag_size + ((data[5] & 0x10) ? 10 : 0);
+	{
+		UInt32 tag = 0;
 
-		if (skip > 0 && skip < file_size) {
-			position = skip;
+		if (fn_mpeg_id3v2_length(data, (UInt32)file_size, &tag) == 1 && tag > 0 && (SInt64)tag < file_size) {
+			position = (SInt64)tag;
 		}
 	}
 
@@ -778,7 +723,7 @@ static OSStatus fn_mp3_parse(AudioFileID file)
 		}
 		if (file->packet_count == 0) {
 			first = frame;
-		} else if (frame.rate != first.rate || frame.channels != first.channels) {
+		} else if (frame.frame.rate != first.frame.rate || frame.frame.channels != first.frame.channels) {
 			/* A frame that disagrees about the format is not part of this stream — MPEG headers can be
 			 * faked by chance in tag data, and one such frame would poison the description. */
 			position++;
@@ -788,7 +733,7 @@ static OSStatus fn_mp3_parse(AudioFileID file)
 			free(data);
 			return kAudio_MemFullError;
 		}
-		position = frame.offset + (SInt64)frame.size;
+		position = frame.offset + (SInt64)frame.frame.size;
 	}
 
 	free(data);
@@ -798,10 +743,10 @@ static OSStatus fn_mp3_parse(AudioFileID file)
 	}
 
 	memset(&file->asbd, 0, sizeof(file->asbd));
-	file->asbd.mSampleRate = (Float64)first.rate;
+	file->asbd.mSampleRate = (Float64)first.frame.rate;
 	file->asbd.mFormatID = kAudioFormatMPEGLayer3;
-	file->asbd.mChannelsPerFrame = first.channels;
-	file->asbd.mFramesPerPacket = first.samples;
+	file->asbd.mChannelsPerFrame = first.frame.channels;
+	file->asbd.mFramesPerPacket = first.frame.samples;
 	/* Bytes per packet and per frame stay ZERO: an MPEG frame's length is in its header, and a description that
 	 * claimed a constant would be lying about every VBR file. */
 
