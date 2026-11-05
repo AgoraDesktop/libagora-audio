@@ -197,7 +197,12 @@ typedef struct agora_driver {
 	const char * name;
 	UInt32       (*device_count)(void);
 	bool         (*device_describe)(UInt32 index, agora_device_desc *out);
-	bool         (*start)(AudioDeviceID id);
+	/* **A DEVICE IS STARTED FOR A REASON, AND THE REASON DECIDES WHAT IS OPENED.** `want_input` is the HAL's answer
+	 * to "has any client of this device asked for its input?" — false unless somebody is recording. A backend that
+	 * ignores it pays for it: ALSA holds a capture PCM open, and a session server publishes a capture *node* (which
+	 * wakes the microphone, shows in everyone's mixer, and asks for permission on some setups) for a client that
+	 * only wanted to play. */
+	bool         (*start)(AudioDeviceID id, bool want_input);
 	void         (*stop)(AudioDeviceID id);
 } agora_driver;
 
@@ -222,6 +227,11 @@ void fn_agora_audio_set_driver(const char *name);
  * applied to it, and the driver plays it or drops it. */
 void fn_agora_device_render(AudioDeviceID id, const float *capture, UInt32 capture_frames, float *mix,
                             UInt32 frames);
+
+/* **TELL THE DEVICE THAT A CLIENT WANTS ITS INPUT, BEFORE STARTING IT.** An input `AudioQueue` is the caller; the
+ * HAL remembers it and hands it to the driver at `start`, and a device already running for playback is restarted
+ * once so the driver can open the other direction. */
+void fn_agora_device_set_input_wanted(AudioDeviceID id, bool wanted);
 
 /* Test hooks, not part of the API and never installed: what the mixer produced, and how many frames it has
  * rendered, so a suite can assert that two io procs summed rather than that they were both called. */

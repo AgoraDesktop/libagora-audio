@@ -79,6 +79,8 @@ typedef struct {
 	Float64           volume;
 	bool              mute;
 	bool              running;
+	bool              running_input;	/* what the running device was started *with* */
+	bool              input_wanted;		/* what a client has asked for since the last stop */
 	bool              has_input;
 	bool              has_output;
 
@@ -1182,11 +1184,23 @@ OSStatus AudioDeviceStart(AudioObjectID inDevice, AudioDeviceIOProcID inProcID)
 	}
 
 	if (!device->running) {
-		if (g_hal.driver == NULL || !g_hal.driver->start(device->id)) {
+		if (g_hal.driver == NULL || !g_hal.driver->start(device->id, device->input_wanted)) {
 			return kAudioHardwareUnspecifiedError;
 		}
 		device->running = true;
+		device->running_input = device->input_wanted;
 		fn_notify(device->id, &running);
+	} else if (g_hal.driver != NULL && device->input_wanted && !device->running_input) {
+		/* **A RUNNING DEVICE CANNOT GAIN A CAPTURE STREAM WITHOUT BEING RESTARTED.** This is the case of a client
+		 * that starts recording while something else is already playing: the driver opened one direction and only
+		 * a stop and a start can open the other. If the restart fails, playback is put back rather than lost — a
+		 * recording that cannot start must not also stop the sound. */
+		g_hal.driver->stop(device->id);
+		if (g_hal.driver->start(device->id, true)) {
+			device->running_input = true;
+		} else {
+			g_hal.driver->start(device->id, false);
+		}
 	}
 
 	return 0;
@@ -1209,6 +1223,9 @@ OSStatus AudioDeviceStop(AudioObjectID inDevice, AudioDeviceIOProcID inProcID)
 			g_hal.driver->stop(device->id);
 		}
 		device->running = false;
+		/* The demand went with the running device: the next start is started for its own reason, not this one's. */
+		device->running_input = false;
+		device->input_wanted = false;
 		/* A STOPPED DEVICE PRODUCES SILENCE, and says so: the mixer's last output is stale the moment the
 		 * data thread stops, and a caller (or a suite) that asks "what came out" must not be handed the
 		 * value from before the stop. */
@@ -1217,6 +1234,15 @@ OSStatus AudioDeviceStop(AudioObjectID inDevice, AudioDeviceIOProcID inProcID)
 	}
 
 	return 0;
+}
+
+void fn_agora_device_set_input_wanted(AudioDeviceID id, bool wanted)
+{
+	agora_device *device = fn_device(id);
+
+	if (device != NULL) {
+		device->input_wanted = wanted;
+	}
 }
 
 OSStatus AudioDeviceGetCurrentTime(AudioObjectID inDevice, AudioTimeStamp *outTime)

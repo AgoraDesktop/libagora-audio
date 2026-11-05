@@ -224,7 +224,7 @@ static void *fn_alsa_thread(void *argument)
 	return NULL;
 }
 
-static bool fn_alsa_start(AudioDeviceID id)
+static bool fn_alsa_start(AudioDeviceID id, bool want_input)
 {
 	bool started = false;
 
@@ -258,7 +258,9 @@ static bool fn_alsa_start(AudioDeviceID id)
 			UInt32 capture_rate = g_alsa.rate;
 			UInt32 capture_frames = g_alsa.frames;
 
-			if (fn_alsa_capture_opens()
+			/* **ONLY WHEN A CLIENT ASKED TO RECORD**: a capture PCM held open is a microphone held open, and a
+			 * playback client has no business doing that. */
+			if (want_input && fn_alsa_capture_opens()
 			    && snd_pcm_open(&g_alsa.capture, g_alsa.pcm_name, SND_PCM_STREAM_CAPTURE, 0) == 0) {
 				if (!fn_alsa_configure(g_alsa.capture, g_alsa.channels, &capture_rate, &capture_frames)
 				    || capture_rate != g_alsa.rate) {

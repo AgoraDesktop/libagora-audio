@@ -563,7 +563,7 @@ static const struct pw_stream_events kCaptureEvents = {
 	.process = fn_pw_on_capture_process
 };
 
-static bool fn_pw_start(AudioDeviceID id)
+static bool fn_pw_start(AudioDeviceID id, bool want_input)
 {
 	bool started = false;
 
@@ -644,11 +644,11 @@ static bool fn_pw_start(AudioDeviceID id)
 				}
 			}
 
-			/* The other direction of the same device, when the session has anything to record from: an input
-			 * stream autoconnects to the default *source*, and the graph's adapter brings it to the device's
-			 * format. It is optional — a session with no source still plays, and the cycle then goes without
-			 * input. */
-			if (started && g_pw.source_count > 0) {
+			/* **THE OTHER DIRECTION, ONLY WHEN A CLIENT ASKED FOR IT.** A session server publishes a node per
+			 * stream: an input stream that nobody asked for is a microphone held open (and, on some setups, a
+			 * permission prompt) for the whole of a playback. It is optional for a second reason too — a session
+			 * with no source still plays, and the cycle then goes without input. */
+			if (started && want_input && g_pw.source_count > 0) {
 				struct pw_properties *input_properties;
 
 				input_properties = pw_properties_new(PW_KEY_MEDIA_TYPE, "Audio",

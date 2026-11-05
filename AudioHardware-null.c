@@ -42,6 +42,7 @@ typedef struct {
 	UInt32         channels;
 	double         rate;
 	bool           quit;
+	bool           capture;		/* whether a client asked for this device's input */
 	UInt64         captured;	/* frames of the synthetic source produced so far */
 } null_engine;
 
@@ -126,8 +127,15 @@ static void *fn_null_thread(void *argument)
 			break;
 		}
 
-		fn_null_capture(engine, capture, engine->frames);
-		fn_agora_device_render(engine->device, capture, engine->frames, mix, engine->frames);
+		/* **THE RAMP IS A SOURCE, AND A SOURCE NOBODY ASKED FOR IS NOT GENERATED.** Nothing else in this backend
+		 * costs anything when it is idle, and a client that only plays must not be handed an input list — which is
+		 * the same rule the three hardware backends follow, made checkable here. */
+		if (engine->capture) {
+			fn_null_capture(engine, capture, engine->frames);
+		}
+
+		fn_agora_device_render(engine->device, engine->capture ? capture : NULL,
+		                       engine->capture ? engine->frames : 0, mix, engine->frames);
 	}
 
 	free(mix);
@@ -135,7 +143,7 @@ static void *fn_null_thread(void *argument)
 	return NULL;
 }
 
-static bool fn_null_start(AudioDeviceID id)
+static bool fn_null_start(AudioDeviceID id, bool want_input)
 {
 	bool started = false;
 
@@ -144,6 +152,7 @@ static bool fn_null_start(AudioDeviceID id)
 	if (!g_engine.running) {
 		memset(&g_engine, 0, sizeof(g_engine));
 		g_engine.device = id;
+		g_engine.capture = want_input;
 		g_engine.frames = 512;
 		g_engine.channels = 2;
 		g_engine.rate = 48000.0;

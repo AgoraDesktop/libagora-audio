@@ -291,7 +291,7 @@ static void *fn_sndio_thread(void *argument)
 	return NULL;
 }
 
-static bool fn_sndio_start(AudioDeviceID id)
+static bool fn_sndio_start(AudioDeviceID id, bool want_input)
 {
 	bool started = false;
 
@@ -337,7 +337,7 @@ static bool fn_sndio_start(AudioDeviceID id)
 
 				/* The recording side, when the server has one: its own handle, its own parameters, its own read
 				 * thread of control (the same thread — one cycle, two directions). */
-				if (g_sndio_device.input) {
+				if (want_input && g_sndio_device.input) {
 					struct sio_hdl *recording = sio_open(fn_sndio_name(), SIO_REC, 0);
 
 					if (recording != NULL) {

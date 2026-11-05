@@ -577,6 +577,10 @@ static void fn_test_input_device(void)
 		}
 	}
 
+	/* **A CLIENT THAT WANTS TO RECORD SAYS SO BEFORE IT STARTS THE DEVICE**, which is what an input queue does: a
+	 * capture stream that nobody asked for holds a microphone open for the whole of somebody's playback. */
+	fn_agora_device_set_input_wanted(input, true);
+
 	fn_check("an io proc on the input device is created",
 	         AudioDeviceCreateIOProcID(input, fn_watch_input, &watch, &proc) == 0 && proc != NULL);
 	fn_check("the input device starts", AudioDeviceStart(input, NULL) == 0);
@@ -606,6 +610,68 @@ static void fn_test_input_device(void)
 	}
 	fn_check("the input device stops", AudioDeviceStop(input, NULL) == 0);
 	fn_check("the io proc is destroyed", AudioDeviceDestroyIOProcID(input, proc) == 0);
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * A capture stream is opened for a reason, and closed for the same one.
+ *
+ * **A DEVICE STARTED TO PLAY MUST NOT HOLD A MICROPHONE OPEN.** A session server publishes a node per stream, and an
+ * ALSA capture PCM takes the device; on some setups the first one also asks the person at the machine for permission.
+ * So this measures the two halves of the rule the seam states: nothing arrives without a client asking, and it arrives
+ * when one does. The second half can only be measured on a machine that has something to record from.
+ * ---------------------------------------------------------------------------------------------- */
+
+static void fn_test_input_on_demand(void)
+{
+	AudioObjectPropertyAddress address = { kAudioDevicePropertyStreams, kAudioObjectPropertyScopeInput,
+	                                       kAudioObjectPropertyElementMaster };
+	AudioDeviceID device = fn_default_output();
+	AudioStreamID streams[4];
+	UInt32 streams_size = sizeof(streams);
+	bool has_input = AudioObjectGetPropertyData(device, &address, 0, NULL, &streams_size, &streams) == 0
+	              && streams_size >= sizeof(AudioStreamID);
+	input_watch watch;
+	AudioDeviceIOProcID proc = NULL;
+
+	memset(&watch, 0, sizeof(watch));
+	watch.ramp = true;
+	watch.continuous = true;
+	watch.half_right = true;
+
+	fn_check("an io proc for the demand test is created",
+	         AudioDeviceCreateIOProcID(device, fn_watch_input, &watch, &proc) == 0 && proc != NULL);
+
+	/* The half that is the bug: started by a playback client, the cycle carries no input at all. */
+	fn_check("the device starts for playback", AudioDeviceStart(device, NULL) == 0);
+	fn_sleep_ms(200);
+	fn_check("a device started without a reason to record hands over no input", !watch.saw_input);
+
+	if (!has_input) {
+		printf("      input: this device has nothing to record from, so the other half is not measured\n");
+		fn_check("the device stops", AudioDeviceStop(device, NULL) == 0);
+	} else {
+		long waited = 0;
+
+		/* **AND A DEVICE THAT IS ALREADY RUNNING GAINS THE OTHER DIRECTION WITHOUT BEING STOPPED BY THE CLIENT.** A
+		 * client that starts recording while something else plays calls `AudioDeviceStart` on a running device; the
+		 * HAL restarts the driver once so it can open its capture side, and the io procs it already has keep being
+		 * called. That is the case a person hits by pressing record during a sound. */
+		watch.saw_input = false;
+		watch.calls = 0;
+		fn_agora_device_set_input_wanted(device, true);
+		fn_check("a running device is started again for capture", AudioDeviceStart(device, NULL) == 0);
+
+		while (watch.calls == 0 && waited < 500) {
+			fn_sleep_ms(10);
+			waited += 10;
+		}
+
+		fn_check("the running device hands over its input once a client asks", watch.saw_input);
+		fn_check("the device stops", AudioDeviceStop(device, NULL) == 0);
+		printf("      input: on demand — silence without a reason, a cycle with one, and no restart by the caller\n");
+	}
+
+	fn_check("the demand test's io proc is destroyed", AudioDeviceDestroyIOProcID(device, proc) == 0);
 }
 
 int main(int argc, char *argv[]);
@@ -642,6 +708,7 @@ int main(int argc, char *argv[])
 	fn_test_volume_and_listeners();
 	fn_test_io_procs();
 	fn_test_clock();
+	fn_test_input_on_demand();
 	fn_test_input_device();
 
 	if (g_failures != 0) {

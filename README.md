@@ -189,13 +189,23 @@ mapped to the client's (a mono client hears the sum of two channels over two), t
 converted the *other* way (`AudioConverterNew(device, client)` rather than `(client, device)`), and the tap runs on the
 cycle's client-format audio before the caller's buffer does — so a tap on a recording works and its
 `AudioQueueProcessingTapGetQueueTime` refuses with `kAudioQueueErr_InvalidTapType`, because nothing is waiting to be
-played. A draining stop returns at once: a capture queue has nothing to play out. A capture queue's volume parameter is
+played. A draining stop returns at once: a capture queue has nothing to play out. **It is also the client that asks the
+device for its input** (`fn_agora_device_set_input_wanted`), which is why a queue that only plays never opens one. A capture queue's volume parameter is
 stored and not applied, since a recording has no playback gain.
 
 **The HAL grew an input side to make that testable.** `fn_agora_device_render` now takes the cycle's capture as well —
-with **its own frame count**, because a session server's two directions are negotiated separately — and hands it to
-every io proc as its `inInputData` (read-only: it is the microphone, and one buffer belongs to the whole cycle), and
-the null device — the one every build has — describes an input stream and *hears a ramp*: frame `n` of its
+with **its own frame count**, because a session server's two directions are negotiated separately — and hands it to every io proc as
+its `inInputData` (read-only: it is the microphone, and one buffer belongs to the whole cycle).
+
+**AND A DRIVER OPENS ITS CAPTURE SIDE ONLY WHEN SOMEBODY ASKED.** `AudioDeviceStart` is what opens a device, and a
+playback client is not a reason to hold a microphone: `fn_agora_device_set_input_wanted` is the HAL's one flag for it,
+set by an input queue before it starts the device, and the driver seam's `start(id, want_input)` carries it. A device
+already running for playback is **restarted once** so the driver can open the other direction, which is the case a
+person hits by pressing record during a sound. MEASURED on this machine's session: a playback queue publishes **no**
+`agora-audio-input` node at all, and an input queue publishes one — where every device start used to publish one, and
+hold the microphone open for the length of the playback.
+
+The null device — the one every build has — describes an input stream and *hears a ramp*: frame `n` of its
 life is `(n % rate) / rate` on the left and half that on the right. A ramp rather than a tone because the question a
 capture test asks is not "is this audio" but "are these the frames, in this order, without a gap", and one subtraction
 answers it.
@@ -213,7 +223,8 @@ samples. That is why the ALSA leg of the suite asserts *delivery* and the null b
 **PipeWire records from the session's default source, beside the sink it plays to.** A PipeWire device here is a
 sink, while playback and capture are different nodes (`Audio/Sink`, `Audio/Source`) — so the device a sink describes
 offers a capture stream too, autoconnected to whatever source the session calls default, with the graph's adapter
-bringing it to the device's channels and rate. `has_input` is true only when the server has at least one source node,
+bringing it to the device's channels and rate — **and only while a client wants it**, because a session server
+publishes a node per stream. `has_input` is true only when the server has at least one source node,
 which is the same "a description is not an answer" rule the sink list follows. Both streams' callbacks run on the same
 thread loop, so the capture callback leaves its quantum in the engine, the playback callback passes it to the mixer
 **once** — a source that stalls yields no input rather than the previous buffer for ever — and then clears it.
@@ -347,7 +358,10 @@ skips, exit 77, when there is none):
   each cycle's first frame continuing from the last cycle's last, so a dropped or duplicated frame fails the assertion
   either inside a buffer or at the seam between two. ALSA and PipeWire choose their own samples (a plugin's silence, a
   room), so those legs measure delivery and say so; `sndio` records the same way but its leg skips here — no `sndiod`
-  listens on this machine, and Debian's `sndiod` binary cannot open a device on it either.
+  listens on this machine, and Debian's `sndiod` binary cannot open a device on it either. **The suite also measures
+  the demand**: a device started by a playback client hands over **no** input, and the same device started again while
+  running — the caller does not stop it — gains the other direction once a client asks, so "nothing arrives without a
+  reason" and "it arrives with one" are both assertions rather than intentions.
 - **`unit`** — the registry finds a built-in and does not invent a fourth; an output unit with a callback
   renders 0.5 and the device measures it; a converter turns int16 0.25 into float32 0.25; a two-bus mixer sums
   0.25 + 0.125 to **0.375**, and halving one bus's volume halves its contribution; and a graph of mixer → output

@@ -1299,9 +1299,17 @@ OSStatus AudioQueueStart(AudioQueueRef inAQ, const AudioTimeStamp *inStartTime)
 
 	if (!inAQ->running) {
 		AudioDeviceIOProcID id = NULL;
-		OSStatus status = AudioDeviceCreateIOProcID(inAQ->device,
-		                                            inAQ->input ? fn_queue_capture : fn_queue_render,
-		                                            inAQ, &id);
+		AudioDeviceIOProc proc = inAQ->input ? fn_queue_capture : fn_queue_render;
+		OSStatus status;
+
+		/* **A QUEUE STARTS THE DEVICE FOR A REASON, AND SAYS SO BEFORE IT DOES.** A capture queue is the one caller
+		 * that wants the device's input, so it is the one that asks for it: nothing else should hold a microphone
+		 * open, and a device that is already playing is restarted once to gain the other direction. */
+		if (inAQ->input) {
+			fn_agora_device_set_input_wanted(inAQ->device, true);
+		}
+
+		status = AudioDeviceCreateIOProcID(inAQ->device, proc, inAQ, &id);
 
 		if (status == 0) {
 			status = AudioDeviceStart(inAQ->device, id);
