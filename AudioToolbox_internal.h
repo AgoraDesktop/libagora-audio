@@ -22,6 +22,18 @@
 #include <stdint.h>
 
 /* ------------------------------------------------------------------------------------------------
+ * Container byte order. Shared so that the file door and the stream door cannot disagree about a chunk
+ * header, which is the kind of disagreement that reads as "works on this file, not that one".
+ * ---------------------------------------------------------------------------------------------- */
+
+uint16_t fn_rd16le(const uint8_t *p);
+uint32_t fn_rd32le(const uint8_t *p);
+uint16_t fn_rd16be(const uint8_t *p);
+uint32_t fn_rd32be(const uint8_t *p);
+uint64_t fn_rd64be(const uint8_t *p);
+double   fn_rd_extended(const uint8_t *p);
+
+/* ------------------------------------------------------------------------------------------------
  * Linear PCM descriptions.
  * ---------------------------------------------------------------------------------------------- */
 

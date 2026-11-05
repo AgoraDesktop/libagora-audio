@@ -135,6 +135,25 @@ static OSStatus (*p_ExtAudioFileGetProperty)(ExtAudioFileRef _Nonnull, ExtAudioF
 static OSStatus (*p_ExtAudioFileSetProperty)(ExtAudioFileRef _Nonnull, ExtAudioFilePropertyID, UInt32,
                                              const void * _Nonnull) = ExtAudioFileSetProperty;
 
+/* --- AudioToolbox/AudioFileStream.h ---------------------------------------- */
+static OSStatus (*p_AudioFileStreamOpen)(void * _Nullable,
+                                         AudioFileStream_PropertyListenerProc _Nonnull,
+                                         AudioFileStream_PacketsProc _Nonnull, AudioFileTypeID,
+                                         AudioFileStreamID _Nullable * _Nonnull) = AudioFileStreamOpen;
+static OSStatus (*p_AudioFileStreamParseBytes)(AudioFileStreamID _Nonnull, UInt32, const void * _Nonnull,
+                                               AudioFileStreamParseFlags) = AudioFileStreamParseBytes;
+static OSStatus (*p_AudioFileStreamGetPropertyInfo)(AudioFileStreamID _Nonnull,
+                                                    AudioFileStreamPropertyID, UInt32 * _Nullable,
+                                                    Boolean * _Nullable) = AudioFileStreamGetPropertyInfo;
+static OSStatus (*p_AudioFileStreamGetProperty)(AudioFileStreamID _Nonnull, AudioFileStreamPropertyID,
+                                                UInt32 * _Nonnull, void * _Nonnull)
+    = AudioFileStreamGetProperty;
+static OSStatus (*p_AudioFileStreamSetProperty)(AudioFileStreamID _Nonnull, AudioFileStreamPropertyID,
+                                                UInt32, const void * _Nonnull) = AudioFileStreamSetProperty;
+static OSStatus (*p_AudioFileStreamSeek)(AudioFileStreamID _Nonnull, SInt64, SInt64 * _Nonnull,
+                                         AudioFileStreamSeekFlags * _Nonnull) = AudioFileStreamSeek;
+static OSStatus (*p_AudioFileStreamClose)(AudioFileStreamID _Nonnull) = AudioFileStreamClose;
+
 int main(void);
 int main(void)
 {
@@ -163,6 +182,10 @@ int main(void)
 		(void *)p_ExtAudioFileWriteAsync, (void *)p_ExtAudioFileSeek,
 		(void *)p_ExtAudioFileTell, (void *)p_ExtAudioFileGetPropertyInfo,
 		(void *)p_ExtAudioFileGetProperty, (void *)p_ExtAudioFileSetProperty,
+		(void *)p_AudioFileStreamOpen, (void *)p_AudioFileStreamParseBytes,
+		(void *)p_AudioFileStreamGetPropertyInfo, (void *)p_AudioFileStreamGetProperty,
+		(void *)p_AudioFileStreamSetProperty, (void *)p_AudioFileStreamSeek,
+		(void *)p_AudioFileStreamClose,
 	};
 
 	return unused[0] == NULL ? 0 : 0;

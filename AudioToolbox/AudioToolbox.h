@@ -16,5 +16,8 @@
 #include <CoreAudio/CoreAudio.h>
 #include <AudioToolbox/AudioFormat.h>
 #include <AudioToolbox/AudioConverter.h>
+#include <AudioToolbox/AudioFile.h>
+#include <AudioToolbox/AudioFileStream.h>
+#include <AudioToolbox/ExtendedAudioFile.h>
 
 #endif /* AGORA_AUDIOTOOLBOX_AUDIOTOOLBOX_H */

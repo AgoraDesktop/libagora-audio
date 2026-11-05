@@ -173,6 +173,13 @@ int main(void)
 	fn_check("kAudioFilePropertyAudioDataByteCount", kAudioFilePropertyAudioDataByteCount, 1650683508);
 	fn_check("kAudioFilePropertyAudioDataPacketCount", kAudioFilePropertyAudioDataPacketCount, 1885564532);
 	fn_check("kExtAudioFileProperty_ClientDataFormat", kExtAudioFileProperty_ClientDataFormat, 1667657076);
+	fn_check("kAudioFileStreamProperty_DataFormat", kAudioFileStreamProperty_DataFormat, 1684434292);
+	fn_check("kAudioFileStreamProperty_DataOffset", kAudioFileStreamProperty_DataOffset, 1685022310);
+	fn_check("kAudioFileStreamProperty_ReadyToProducePackets",
+	         kAudioFileStreamProperty_ReadyToProducePackets, 1919247481);
+	fn_check("kAudioFileStreamError_IllegalOperation", kAudioFileStreamError_IllegalOperation, 1852797029);
+	fn_check("kAudioFileStreamError_InvalidFile", kAudioFileStreamError_InvalidFile, 1685348671);
+	fn_check("kAudioFileStreamParseFlag_Discontinuity", kAudioFileStreamParseFlag_Discontinuity, 1);
 
 	if (g_failures != 0) {
 		fprintf(stderr, "api-macros: %d failure(s)\n", g_failures);

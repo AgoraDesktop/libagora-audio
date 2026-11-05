@@ -20,6 +20,7 @@
  */
 
 #include <AudioToolbox/ExtendedAudioFile.h>
+#include <AudioToolbox/AudioFileStream.h>
 #include <CoreFoundation/CFURL.h>
 
 #include <stdio.h>
@@ -388,6 +389,163 @@ static void fn_test_extended_rate_change(void)
 }
 
 /* ================================================================================================
+ * The streaming door: the same bytes, a few at a time.
+ * ============================================================================================== */
+
+typedef struct {
+	UInt32 bytes;
+	UInt32 packets;
+	UInt32 format_notifications;
+	UInt32 ready_notifications;
+	bool   saw_data_format;
+	AudioStreamBasicDescription format;
+} stream_state;
+
+static void fn_stream_property(void *client, AudioFileStreamID stream,
+                               AudioFileStreamPropertyID property, AudioFileStreamPropertyFlags *flags)
+{
+	stream_state *state = client;
+	(void)stream;
+	(void)flags;
+
+	if (property == kAudioFileStreamProperty_DataFormat) {
+		UInt32 size = sizeof(state->format);
+
+		state->format_notifications++;
+		if (AudioFileStreamGetProperty(stream, property, &size, &state->format) == 0) {
+			state->saw_data_format = true;
+		}
+	} else if (property == kAudioFileStreamProperty_ReadyToProducePackets) {
+		state->ready_notifications++;
+	}
+}
+
+static void fn_stream_packets(void *client, UInt32 bytes, UInt32 packets, const void *data,
+                              AudioStreamPacketDescription *descriptions)
+{
+	stream_state *state = client;
+	(void)data;
+	(void)descriptions;
+
+	state->bytes += bytes;
+	state->packets += packets;
+}
+
+static void fn_test_streaming(void)
+{
+	char path[64];
+	CFURLRef url = fn_temp_url(path, sizeof(path));
+	AudioFileID file = NULL;
+	AudioStreamBasicDescription format = fn_pcm(44100.0, 2, 16,
+	                                            kAudioFormatFlagIsSignedInteger | kAudioFormatFlagIsPacked);
+	UInt32 frames = 2000;
+	UInt32 bytes = frames * format.mBytesPerFrame;
+	uint8_t *audio;
+	FILE *handle;
+	uint8_t *raw;
+	long raw_size;
+	OSStatus status;
+
+	if (url == NULL) {
+		fn_check("a temporary file is created", 0);
+		return;
+	}
+
+	audio = malloc(bytes);
+	if (audio == NULL) {
+		CFRelease(url);
+		unlink(path);
+		return;
+	}
+	{
+		UInt32 i;
+
+		for (i = 0; i < bytes; i++) {
+			audio[i] = (uint8_t)(i * 13 + 1);
+		}
+	}
+
+	status = AudioFileCreateWithURL(url, kAudioFileWAVEType, &format, kAudioFileFlags_EraseFile, &file);
+	if (status != 0) {
+		fn_check("the stream source is written", 0);
+		free(audio);
+		CFRelease(url);
+		unlink(path);
+		return;
+	}
+	{
+		UInt32 count = bytes;
+
+		AudioFileWriteBytes(file, false, 0, &count, audio);
+	}
+	AudioFileClose(file);
+
+	/* Read the file back as raw bytes and feed it in 7-byte pieces: a container header split across
+	 * calls is the case a stream parser exists for. */
+	handle = fopen(path, "rb");
+	fseek(handle, 0, SEEK_END);
+	raw_size = ftell(handle);
+	fseek(handle, 0, SEEK_SET);
+	raw = malloc((size_t)raw_size);
+	if (raw == NULL || fread(raw, 1, (size_t)raw_size, handle) != (size_t)raw_size) {
+		fn_check("the stream source is read", 0);
+		fclose(handle);
+		free(raw);
+		free(audio);
+		CFRelease(url);
+		unlink(path);
+		return;
+	}
+	fclose(handle);
+
+	{
+		stream_state state;
+		AudioFileStreamID stream = NULL;
+		long offset;
+
+		memset(&state, 0, sizeof(state));
+
+		status = AudioFileStreamOpen(&state, fn_stream_property, fn_stream_packets, 0, &stream);
+		fn_check("a stream is opened with no type hint", status == 0 && stream != NULL);
+
+		for (offset = 0; offset < raw_size; offset += 7) {
+			UInt32 chunk = (UInt32)((raw_size - offset) < 7 ? (raw_size - offset) : 7);
+
+			status = AudioFileStreamParseBytes(stream, chunk, raw + offset, 0);
+			if (status != 0) {
+				break;
+			}
+		}
+
+		fn_check("the stream parses in 7-byte pieces", status == 0);
+		fn_check("the data format was announced once", state.format_notifications == 1);
+		fn_check("the format is the file's",
+		         state.saw_data_format && state.format.mChannelsPerFrame == 2
+		         && state.format.mBitsPerChannel == 16 && state.format.mSampleRate == 44100.0);
+		fn_check("readiness was announced once", state.ready_notifications == 1);
+		fn_check("every audio packet was handed over", state.packets == frames);
+		fn_check("every audio byte was handed over", state.bytes == bytes);
+
+		/* A seek in a linear PCM stream is arithmetic the caller can do, and this door says so. */
+		{
+			SInt64 byte_offset = 0;
+			AudioFileStreamSeekFlags flags = 0;
+
+			status = AudioFileStreamSeek(stream, 10, &byte_offset, &flags);
+			fn_check("seeking a PCM stream is refused by name",
+			         status == kAudioFileStreamError_IllegalOperation);
+		}
+
+		AudioFileStreamClose(stream);
+	}
+
+	free(raw);
+	free(audio);
+	CFRelease(url);
+	unlink(path);
+}
+
+/* ================================================================================================
  * Refusals.
  * ============================================================================================== */
 
@@ -462,6 +620,7 @@ int main(void)
 
 	fn_test_extended_conversion();
 	fn_test_extended_rate_change();
+	fn_test_streaming();
 	fn_test_refusals();
 
 	if (g_failures != 0) {

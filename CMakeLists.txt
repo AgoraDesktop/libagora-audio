@@ -57,6 +57,7 @@ add_library(Audio SHARED
     "${CMAKE_CURRENT_SOURCE_DIR}/AudioResampler.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/AudioConverter.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/AudioFile.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/AudioFileStream.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/ExtAudioFile.c")
 
 set_target_properties(Audio PROPERTIES OUTPUT_NAME agora-audio)

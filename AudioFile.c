@@ -67,11 +67,11 @@ struct OpaqueAudioFileID {
 static double fn_ldexp(double value, int exponent) { return ldexp(value, exponent); }
 static double fn_frexp(double value, int *exponent) { return frexp(value, exponent); }
 
-static uint16_t fn_rd16le(const uint8_t *p) { return (uint16_t)(p[0] | (p[1] << 8)); }
-static uint32_t fn_rd32le(const uint8_t *p) { return (uint32_t)p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24); }
-static uint16_t fn_rd16be(const uint8_t *p) { return (uint16_t)((p[0] << 8) | p[1]); }
-static uint32_t fn_rd32be(const uint8_t *p) { return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) | ((uint32_t)p[2] << 8) | (uint32_t)p[3]; }
-static uint64_t fn_rd64be(const uint8_t *p) { return ((uint64_t)fn_rd32be(p) << 32) | fn_rd32be(p + 4); }
+uint16_t fn_rd16le(const uint8_t *p) { return (uint16_t)(p[0] | (p[1] << 8)); }
+uint32_t fn_rd32le(const uint8_t *p) { return (uint32_t)p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24); }
+uint16_t fn_rd16be(const uint8_t *p) { return (uint16_t)((p[0] << 8) | p[1]); }
+uint32_t fn_rd32be(const uint8_t *p) { return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) | ((uint32_t)p[2] << 8) | (uint32_t)p[3]; }
+uint64_t fn_rd64be(const uint8_t *p) { return ((uint64_t)fn_rd32be(p) << 32) | fn_rd32be(p + 4); }
 
 static void fn_wr16le(uint8_t *p, uint16_t v) { p[0] = (uint8_t)v; p[1] = (uint8_t)(v >> 8); }
 static void fn_wr32le(uint8_t *p, uint32_t v) { p[0] = (uint8_t)v; p[1] = (uint8_t)(v >> 8); p[2] = (uint8_t)(v >> 16); p[3] = (uint8_t)(v >> 24); }
@@ -81,7 +81,7 @@ static void fn_wr64be(uint8_t *p, uint64_t v) { fn_wr32be(p, (uint32_t)(v >> 32)
 
 /* AIFF's sample rate is a 10-byte IEEE 754 extended float. Decoding it is twelve lines; encoding it is the
  * same twelve backwards, and both are checked by the round trip in the suite. */
-static double fn_rd_extended(const uint8_t *p)
+double fn_rd_extended(const uint8_t *p)
 {
 	int exponent = (int)(((p[0] & 0x7F) << 8) | p[1]);
 	uint64_t mantissa = fn_rd64be(p + 2);

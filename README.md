@@ -29,19 +29,20 @@ libagora-audio/AudioToolbox/
     AudioConverter.h     format and sample-rate conversion
     AudioFile.h          WAV, AIFF and CAF
     ExtendedAudioFile.h  a file that speaks the client's format
+    AudioFileStream.h    the same containers, parsed as they arrive
 HostTime.c               the host clock over clock_gettime(CLOCK_MONOTONIC)
 AudioFormat.c            the four properties answered, and the frame arithmetic behind them
 AudioResampler.c         the windowed-sinc, arbitrary-ratio interpolator
 AudioConverter.c         the three-step pipeline: float, resample, back out
 AudioFile.c              the three containers, read and written here
 ExtAudioFile.c           format and rate conversion inside the file door
+AudioFileStream.c        incremental parsing, with a listener and a packet callback
 tools/refshim/           sixty lines of ours, so clang on Linux can parse Apple's headers
 tools/api-manifest.py    generates tests/api/manifest-10.12.txt from a MacOSX10.12.sdk
 tests/api/               the four identity gates
 ```
 
-Still to come: `AudioFileStream.h` (the incremental parser — the same three containers, fed in pieces),
-then the device layer (`CoreAudio/AudioHardware.h`), `AudioQueue`, `AudioServices` and `AudioUnit`.
+**Phase 1 is complete.** Still to come: the device layer (`CoreAudio/AudioHardware.h`), `AudioQueue`, `AudioServices` and `AudioUnit`.
 `../AUDIO-PLAN.md` §9 is the schedule and §6 the header-by-header commitment.
 
 The three containers are ours rather than a library's: WAV is a little-endian chunk list, AIFF is a
@@ -111,7 +112,9 @@ manifest already holds every one of them.
 - **`file`** — WAV, AIFF and CAF each written, closed, reopened and compared with `memcmp`: **bit-exact**,
   with the byte count, packet count, duration and data format checked separately; then `ExtAudioFile`
   converting int16 → float32 → int16 exactly, and a 44.1 kHz client writing a 48 kHz file, which lands
-  within 2% of the expected frame count; then four refusals by name.
+  within 2% of the expected frame count; then the same WAV fed to `AudioFileStream` **seven bytes at a
+  time**, which announces the format and readiness once each and hands over all 2000 packets; then four
+  refusals by name.
 
 ## Build and run
 
