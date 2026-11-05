@@ -47,6 +47,30 @@ UInt32 fn_pcm_bytes_per_frame(const AudioStreamBasicDescription *asbd);
 
 bool fn_pcm_is_supported(const AudioStreamBasicDescription *asbd, OSStatus *out_status);
 
+/* ------------------------------------------------------------------------------------------------
+ * The decoders.
+ *
+ * **A CODEC IS A STREAM**: MPEG Layer III's bit reservoir means frame N's samples depend on the frames before it,
+ * so a decoder is a handle fed in order rather than a call that answers "decode these bytes". `fn_codec_reset` is
+ * what a seek says to it. The decoder produces INTERLEAVED FLOAT32, which is the currency of the conversion path.
+ *
+ * `fn_codec_is_decodable` answers for a description without opening anything, so a door can refuse an unplayable
+ * file before it allocates. Every one of them answers "no" on a build without the decoder compiled in, and
+ * `fn_codec_decode` reports the channel count it actually produced so the caller can refuse a stream whose frames
+ * disagree with the description the container gave.
+ * ---------------------------------------------------------------------------------------------- */
+typedef struct AudioCodec AudioCodec;
+
+bool        fn_codec_is_decodable(const AudioStreamBasicDescription *asbd);
+AudioCodec *fn_codec_open(const AudioStreamBasicDescription *asbd);
+void        fn_codec_close(AudioCodec *codec);
+void        fn_codec_reset(AudioCodec *codec);
+
+/* Feed compressed bytes; write interleaved float32 frames into `out`; the return is frames written, which stops at
+ * `capacity`. Zero frames with a non-zero feed means the decoder wants more bytes, not that the file has ended. */
+UInt32      fn_codec_decode(AudioCodec *codec, const void *bytes, UInt32 byte_count,
+                            float *out, UInt32 capacity, UInt32 *out_channels);
+
 /* Read one frame from `src` into interleaved float32; write one frame from interleaved float32 into
  * `dst`. Both take the *frame* stride the description implies. */
 void fn_pcm_frame_to_float(const AudioStreamBasicDescription *asbd, const uint8_t *src, float *dst);

@@ -80,12 +80,23 @@ CF_ENUM(OSStatus)
     kAudioFileInvalidChunkError         = 'chk?'
 };
 
-/* The three containers, in Apple's four-char spelling. */
+/* The three containers, in Apple's four-char spelling, and the fourth that is a stream rather than a container.
+ *
+ * **MP3 IS READ AND NOT WRITTEN, AND THAT IS THE FIRST COMPRESSED FORMAT THIS DOOR KNOWS.** Its packets are MPEG
+ * frames — 1152 samples of audio for MPEG-1, 576 for MPEG-2 and 2.5 — so `kAudioFilePropertyAudioDataPacketCount`
+ * answers in frames of *compressed* audio and the duration comes from the frame count the stream's own headers give
+ * rather than from a byte count. Apple's `kAudioFileMP3Type` is the identifier; the identifier for the codec is
+ * `kAudioFormatMPEGLayer3` in CoreAudioTypes.h, and the two are different questions: the container, and the audio.
+ *
+ * **THE SPELLING IS `'MPG3'`, NOT `'mp3 '`, AND THE MANIFEST IS WHY WE KNOW.** 10.12's `AudioFile.h` spells the three
+ * MPEG containers `'MPG1'`, `'MPG2'` and `'MPG3'`, which is not a spelling anyone guesses — the obvious-looking
+ * `'mp3 '` is not this constant at all. `tests/api/macros.c` checks the value against the manifest and caught it. */
 CF_ENUM(AudioFileTypeID)
 {
     kAudioFileAIFFType  = 'AIFF',
     kAudioFileWAVEType  = 'WAVE',
-    kAudioFileCAFType   = 'caff'
+    kAudioFileCAFType   = 'caff',
+    kAudioFileMP3Type   = 'MPG3'
 };
 
 /* The property selectors this door answers. Everything else in Apple's table — album artwork, ID3, chunk

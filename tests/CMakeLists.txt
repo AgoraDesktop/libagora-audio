@@ -49,6 +49,51 @@ add_executable(file file.c)
 target_link_libraries(file PRIVATE Audio m)
 add_test(NAME file COMMAND file)
 
+# **THE FIRST COMPRESSED FORMAT, AND THE FIXTURES ARE AN ENCODER'S OUTPUT.** `ffmpeg` writes two tones while the suite
+# is configured — 44.1 kHz stereo MPEG-1 and 22.05 kHz mono MPEG-2, whose frames hold 1152 and 576 samples — because an
+# MP3 is an encoder's output and no checked-in blob would explain itself. Two questions are asked that a frame count
+# alone cannot answer: whether the container's own headers match the file, and whether the samples are the tone that
+# went in.
+#
+# **THE TEST IS REGISTERED WHATEVER HAPPENS, AND SKIPS WHEN IT HAS NOTHING TO READ.** A suite that is not built at all
+# is a suite that is missing without saying so; a `Skipped` line in ctest's own report is the honest version, and it is
+# the same shape `hal-sndio` uses for a server that is not running. The same skip covers a build with
+# `-DAGORA_AUDIO_WITH_MPG123=OFF`, where the container still reads and there is no decoder behind it.
+add_executable(mp3 mp3.c)
+target_link_libraries(mp3 PRIVATE Audio CoreFoundation::CoreFoundation m)
+set(_mp3_fixtures)
+find_program(FFMPEG_EXECUTABLE ffmpeg)
+if(FFMPEG_EXECUTABLE)
+    set(_mpeg1 "${CMAKE_CURRENT_BINARY_DIR}/tone-mpeg1-stereo.mp3")
+    set(_mpeg2 "${CMAKE_CURRENT_BINARY_DIR}/tone-mpeg2-mono.mp3")
+    set(_mp3_fixtures "${_mpeg1}" "${_mpeg2}")
+
+    if(NOT EXISTS "${_mpeg1}")
+        execute_process(
+            COMMAND "${FFMPEG_EXECUTABLE}" -loglevel error -y -f lavfi
+                    -i "sine=frequency=440:duration=3" -ar 44100 -ac 2 -b:a 192k "${_mpeg1}"
+            RESULT_VARIABLE _mp3_status)
+        if(NOT _mp3_status EQUAL 0)
+            message(WARNING "libagora-audio: ffmpeg could not write ${_mpeg1}; the MP3 suite will skip")
+            file(REMOVE "${_mpeg1}")
+        endif()
+    endif()
+    if(NOT EXISTS "${_mpeg2}")
+        execute_process(
+            COMMAND "${FFMPEG_EXECUTABLE}" -loglevel error -y -f lavfi
+                    -i "sine=frequency=330:duration=2" -ar 22050 -ac 1 -q:a 4 "${_mpeg2}"
+            RESULT_VARIABLE _mp3_status)
+        if(NOT _mp3_status EQUAL 0)
+            message(WARNING "libagora-audio: ffmpeg could not write ${_mpeg2}; the MP3 suite will skip")
+            file(REMOVE "${_mpeg2}")
+        endif()
+    endif()
+else()
+    message(STATUS "libagora-audio: no ffmpeg, so the MP3 suite will report a skip")
+endif()
+add_test(NAME mp3 COMMAND mp3 ${_mp3_fixtures})
+set_tests_properties(mp3 PROPERTIES SKIP_RETURN_CODE 77)
+
 add_executable(hal hal.c)
 target_link_libraries(hal PRIVATE Audio m dispatch)
 # The suite asserts on the mixer's own output, which is a test hook in the library's private header.
@@ -102,6 +147,9 @@ set(_agora_runtime_dirs
 list(REMOVE_DUPLICATES _agora_runtime_dirs)
 string(REPLACE ";" ":" _agora_ld_path "${_agora_runtime_dirs}")
 set(_agora_audio_tests api-layout api-macros api-cxx api-objc api-prototypes format converter file hal queue unit hosttime auv3)
+if(TARGET mp3)
+    list(APPEND _agora_audio_tests mp3)
+endif()
 if(ALSA_FOUND)
     list(APPEND _agora_audio_tests hal-alsa)
 endif()

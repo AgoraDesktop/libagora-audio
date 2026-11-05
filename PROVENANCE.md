@@ -49,8 +49,12 @@ extension, and a class that cannot be loaded is worse than an absent name.
   generator runs it reads the SDK in place and stages a scratch copy (to spell Darwin's `__nonnull` the way
   clang spells it everywhere) which is deleted when it finishes.
 - **No Apple binary.** No `.dylib`, no framework, no extracted table.
-- **No vendored audio code.** PipeWire, ALSA and sndio are found as *system* libraries by `pkg-config` when
-  their phase arrives, and they are `PRIVATE` links: no type from any of them appears in a public header.
+- **No vendored audio code.** PipeWire, ALSA, sndio and libmpg123 are found as *system* libraries by
+  `pkg-config`, and they are `PRIVATE` links: no type from any of them appears in a public header.
+- **No encoder and no checked-in audio.** The MP3 fixtures `tests/mp3.c` reads are written by `ffmpeg` from
+  lavfi's own sine generator when the suite is configured, and are not committed; with no `ffmpeg` the suite
+  reports a skip. Nothing in this repository is a recording, a sample library or an encoder's output that
+  travelled with it.
 
 ## `tools/refshim/`
 
@@ -78,4 +82,8 @@ answer than an absence.
 
 LGPL-3.0-or-later (library) and GPL-3.0-or-later (tests), for the reason in `LICENSE`: the stack it sits
 on is Apache-2.0, which resolves with version 3 of either copyleft and with nothing older. The system audio
-libraries are MIT (PipeWire), ISC (sndio) and LGPL-2.1-or-later (ALSA, dynamically linked only).
+libraries are MIT (PipeWire), ISC (sndio), LGPL-2.1-or-later (ALSA) and **LGPL-2.1 (libmpg123, the MPEG audio
+decoder behind phase 7)** — every one of them dynamically linked and never vendored, which is the condition
+the LGPL licences are accepted under here. A GPL decoder (libmad, libsidplayfp) could not be linked at all:
+it would relicense this library and every consumer of it, which is why the first compressed format waited
+for a permissively licensed one to exist as a package.

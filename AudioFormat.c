@@ -71,7 +71,10 @@ bool fn_pcm_is_supported(const AudioStreamBasicDescription *asbd, OSStatus *out_
 	}
 
 	if (asbd->mFormatID != kAudioFormatLinearPCM) {
-		/* No codec exists here yet, so this is the honest answer for AAC, ALAC and MP3 alike. */
+		/* **THIS IS THE CONVERTER'S DOOR, NOT THE DECODER'S.** `AudioConverter` converts linear PCM to linear PCM;
+		 * MPEG Layer III is decoded by the file door (`AudioCodec.c` behind `ExtAudioFile`), because a decoder is a
+		 * stream and a converter is a ring. So MP3 is playable and still refused HERE, and the two facts are not
+		 * in conflict. */
 		if (out_status) { *out_status = kAudioConverterErr_FormatNotSupported; }
 		return false;
 	}

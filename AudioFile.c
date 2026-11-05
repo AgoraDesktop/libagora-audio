@@ -40,7 +40,17 @@ struct OpaqueAudioFileID {
 	SInt64 data_offset;   /* where the audio starts */
 	SInt64 data_bytes;    /* how much of it there is */
 	SInt64 file_size;     /* the file as the OS sees it */
-	SInt64 frames;        /* for PCM: data_bytes / bytesPerFrame */
+	SInt64 frames;        /* for PCM: data_bytes / bytesPerFrame; for MPEG: packets x samples per frame */
+
+	/* **MPEG AUDIO HAS NO HEADER THAT COUNTS ITS FRAMES**, so the table below IS the container: one entry per MPEG
+	 * frame, found by walking the stream's own sync words at open time. That is what makes a VBR file's duration
+	 * exact rather than estimated, and what lets a packet be read by index without decoding everything before it. */
+	struct fn_mp3_packet {
+		SInt64 offset;
+		UInt32 size;
+	} *packet_table;
+	UInt32 packet_count;
+	UInt32 packet_capacity;
 
 	bool   dirty;         /* a header still needs its sizes patched */
 
@@ -613,6 +623,194 @@ static OSStatus fn_caf_create(AudioFileID file, const AudioStreamBasicDescriptio
  * The header numbers, once the data is written.
  * ---------------------------------------------------------------------------------------------- */
 
+/* ------------------------------------------------------------------------------------------------
+ * MPEG Layer III.
+ *
+ * **THE STREAM HAS NO HEADER, SO THE INDEX IS BUILT BY WALKING IT.** There is no frame count to read anywhere: the
+ * only way to know how many frames a file holds — and therefore how long it is — is to walk from the first sync word
+ * to the last. That walk happens once, at open, and its result is a table of (offset, size) that every later read
+ * indexes. It is also what makes a VARIABLE-bitrate file exact: each frame's length comes from its own header.
+ *
+ * The alternative, dividing the byte count by the first frame's bitrate, is what a naive reader does, and it is
+ * wrong by minutes on a VBR file — so this door does not offer it.
+ * ---------------------------------------------------------------------------------------------- */
+
+/* kbit/s by index, for MPEG-1 and for MPEG-2/2.5. Index 0 is "free" and 15 is "bad", and both are refused. */
+static const uint32_t fn_mp3_bitrates_mpeg1[16] = { 0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 0 };
+static const uint32_t fn_mp3_bitrates_mpeg2[16] = { 0,  8, 16, 24, 32, 40, 48, 56,  64,  80,  96, 112, 128, 144, 160, 0 };
+
+/* Hz by version and index. Version 1 is reserved, and index 3 is reserved at every version. */
+static const uint32_t fn_mp3_rates[4][3] = {
+	{ 11025, 12000, 8000 },		/* MPEG 2.5 */
+	{ 0, 0, 0 },			/* reserved */
+	{ 22050, 24000, 16000 },	/* MPEG 2 */
+	{ 44100, 48000, 32000 }		/* MPEG 1 */
+};
+
+typedef struct {
+	SInt64   offset;
+	UInt32   size;
+	uint32_t rate;
+	uint32_t channels;
+	uint32_t samples;		/* samples per frame: 1152 for MPEG-1, 576 for MPEG-2 and 2.5 */
+} fn_mp3_frame;
+
+/* One frame's header at `at`, or false when those four bytes are not a Layer III frame this door reads. */
+static bool fn_mp3_frame_at(const uint8_t *data, SInt64 file_size, SInt64 at, fn_mp3_frame *out)
+{
+	uint32_t b1, b2, b3;
+	uint32_t version, layer, bitrate_index, rate_index, padding, mode, bitrate, rate, samples;
+	SInt64 length;
+
+	if (at + 4 > file_size) {
+		return false;
+	}
+	if (data[at] != 0xFF || (data[at + 1] & 0xE0) != 0xE0) {
+		return false;
+	}
+	b1 = data[at + 1];
+	b2 = data[at + 2];
+	b3 = data[at + 3];
+
+	version = (b1 >> 3) & 0x03;		/* 3 = MPEG-1, 2 = MPEG-2, 0 = MPEG-2.5, 1 = reserved */
+	layer = (b1 >> 1) & 0x03;		/* 1 = Layer III */
+	if (version == 1 || layer != 1) {
+		return false;
+	}
+
+	bitrate_index = (b2 >> 4) & 0x0F;
+	rate_index = (b2 >> 2) & 0x03;
+	padding = (b2 >> 1) & 0x01;
+	if (bitrate_index == 0 || bitrate_index == 15 || rate_index == 3) {
+		return false;
+	}
+
+	bitrate = (version == 3) ? fn_mp3_bitrates_mpeg1[bitrate_index] : fn_mp3_bitrates_mpeg2[bitrate_index];
+	rate = fn_mp3_rates[version][rate_index];
+	if (bitrate == 0 || rate == 0) {
+		return false;
+	}
+
+	mode = (b3 >> 6) & 0x03;
+	samples = (version == 3) ? 1152 : 576;
+
+	/* The frame length every MPEG-1 Layer III table gives: floor(144 x bitrate / rate) + padding, and half of
+	 * the coefficient for MPEG-2/2.5 because its frames hold half the samples. */
+	length = ((version == 3) ? (144 * (SInt64)bitrate * 1000 / (SInt64)rate)
+	                          : ( 72 * (SInt64)bitrate * 1000 / (SInt64)rate)) + (SInt64)padding;
+	if (length < 4 || at + length > file_size) {
+		return false;			/* a truncated final frame is not a packet */
+	}
+
+	out->offset = at;
+	out->size = (UInt32)length;
+	out->rate = rate;
+	out->channels = (mode == 3) ? 1 : 2;	/* mode 3 is single-channel; every other mode is two */
+	out->samples = samples;
+	return true;
+}
+
+static bool fn_mp3_push(AudioFileID file, const fn_mp3_frame *frame)
+{
+	if (file->packet_count == file->packet_capacity) {
+		UInt32 grown = (file->packet_capacity == 0) ? 1024 : file->packet_capacity * 2;
+		void *table = realloc(file->packet_table, (size_t)grown * sizeof(*file->packet_table));
+
+		if (table == NULL) {
+			return false;
+		}
+		file->packet_table = table;
+		file->packet_capacity = grown;
+	}
+	file->packet_table[file->packet_count].offset = frame->offset;
+	file->packet_table[file->packet_count].size = frame->size;
+	file->packet_count++;
+	return true;
+}
+
+static OSStatus fn_mp3_parse(AudioFileID file)
+{
+	uint8_t *data;
+	SInt64 file_size = file->file_size;
+	SInt64 position;
+	UInt32 got = 0;
+	fn_mp3_frame first;
+	OSStatus status;
+
+	/* **A FILE TOO BIG TO WALK IN MEMORY IS REFUSED RATHER THAN READ SLOWLY.** 8 MiB a minute is a 320 kbit/s
+	 * MP3; the ceiling below is hours of it, and a file past it is not a song. */
+	if (file_size <= 0 || file_size > (SInt64)(256u << 20)) {
+		return kAudioFileUnsupportedFileTypeError;
+	}
+
+	data = malloc((size_t)file_size);
+	if (data == NULL) {
+		return kAudio_MemFullError;
+	}
+	status = fn_read_at(file, 0, data, (UInt32)file_size, &got);
+	if (status != 0 || got != (UInt32)file_size) {
+		free(data);
+		return kAudioFileInvalidFileError;
+	}
+
+	position = 0;
+
+	/* **AN ID3v2 TAG IS SKIPPED BY ITS OWN SIZE FIELD, before any sync is looked for**: it is allowed to contain
+	 * 0xFF bytes, and a walk that started inside one would index 100 KB of artwork as audio. */
+	if (file_size >= 10 && data[0] == 'I' && data[1] == 'D' && data[2] == '3') {
+		SInt64 tag_size = ((SInt64)(data[6] & 0x7F) << 21) | ((SInt64)(data[7] & 0x7F) << 14)
+		                | ((SInt64)(data[8] & 0x7F) << 7) | (SInt64)(data[9] & 0x7F);
+		SInt64 skip = 10 + tag_size + ((data[5] & 0x10) ? 10 : 0);
+
+		if (skip > 0 && skip < file_size) {
+			position = skip;
+		}
+	}
+
+	memset(&first, 0, sizeof(first));
+
+	while (position + 4 <= file_size) {
+		fn_mp3_frame frame;
+
+		if (!fn_mp3_frame_at(data, file_size, position, &frame)) {
+			position++;		/* resync by one byte: garbage, an APE tag, a Lyrics3 block */
+			continue;
+		}
+		if (file->packet_count == 0) {
+			first = frame;
+		} else if (frame.rate != first.rate || frame.channels != first.channels) {
+			/* A frame that disagrees about the format is not part of this stream — MPEG headers can be
+			 * faked by chance in tag data, and one such frame would poison the description. */
+			position++;
+			continue;
+		}
+		if (!fn_mp3_push(file, &frame)) {
+			free(data);
+			return kAudio_MemFullError;
+		}
+		position = frame.offset + (SInt64)frame.size;
+	}
+
+	free(data);
+
+	if (file->packet_count == 0) {
+		return kAudioFileUnsupportedFileTypeError;
+	}
+
+	memset(&file->asbd, 0, sizeof(file->asbd));
+	file->asbd.mSampleRate = (Float64)first.rate;
+	file->asbd.mFormatID = kAudioFormatMPEGLayer3;
+	file->asbd.mChannelsPerFrame = first.channels;
+	file->asbd.mFramesPerPacket = first.samples;
+	/* Bytes per packet and per frame stay ZERO: an MPEG frame's length is in its header, and a description that
+	 * claimed a constant would be lying about every VBR file. */
+
+	file->data_offset = file->packet_table[0].offset;
+	file->data_bytes = (file->packet_table[file->packet_count - 1].offset
+	                    + (SInt64)file->packet_table[file->packet_count - 1].size) - file->data_offset;
+	return 0;
+}
+
 static OSStatus fn_finalize(AudioFileID file)
 {
 	uint8_t patch[8];
@@ -671,6 +869,12 @@ static OSStatus fn_finalize(AudioFileID file)
 static void fn_update_frames(AudioFileID file)
 {
 	UInt32 bytes_per_frame = fn_pcm_bytes_per_frame(&file->asbd);
+
+	if (file->type == kAudioFileMP3Type) {
+		/* A packet is a frame of audio, not a byte: the sampres-per-frame is in every MPEG header. */
+		file->frames = (SInt64)file->packet_count * (SInt64)file->asbd.mFramesPerPacket;
+		return;
+	}
 
 	file->frames = (bytes_per_frame != 0) ? file->data_bytes / bytes_per_frame : 0;
 }
@@ -734,6 +938,10 @@ static OSStatus fn_open_fd(AudioFileID file, CFURLRef url, AudioFilePermissions 
 			file->type = kAudioFileAIFFType;
 		} else if (memcmp(magic, "caff", 4) == 0) {
 			file->type = kAudioFileCAFType;
+		} else if (memcmp(magic, "ID3", 3) == 0 || (magic[0] == 0xFF && (magic[1] & 0xE0) == 0xE0)) {
+			/* **AN MP3 BEGINS WITH AN OPTIONAL ID3 TAG OR WITH A FRAME SYNC**, and those are its only two openings:
+			 * there is no four-character magic, because the format has no header at all. */
+			file->type = kAudioFileMP3Type;
 		} else {
 			return kAudioFileUnsupportedFileTypeError;
 		}
@@ -743,6 +951,7 @@ static OSStatus fn_open_fd(AudioFileID file, CFURLRef url, AudioFilePermissions 
 	case kAudioFileWAVEType:  status = fn_wav_parse(file); break;
 	case kAudioFileAIFFType:  status = fn_aiff_parse(file); break;
 	case kAudioFileCAFType:   status = fn_caf_parse(file); break;
+	case kAudioFileMP3Type:   status = fn_mp3_parse(file); break;
 	default:                  status = kAudioFileUnsupportedFileTypeError; break;
 	}
 
@@ -826,6 +1035,8 @@ OSStatus AudioFileOpenWithCallbacks(void *inClientData, AudioFile_ReadProc inRea
 			file->type = kAudioFileAIFFType;
 		} else if (memcmp(magic, "caff", 4) == 0) {
 			file->type = kAudioFileCAFType;
+		} else if (memcmp(magic, "ID3", 3) == 0 || (magic[0] == 0xFF && (magic[1] & 0xE0) == 0xE0)) {
+			file->type = kAudioFileMP3Type;
 		} else {
 			free(file);
 			return kAudioFileUnsupportedFileTypeError;
@@ -836,6 +1047,7 @@ OSStatus AudioFileOpenWithCallbacks(void *inClientData, AudioFile_ReadProc inRea
 	case kAudioFileWAVEType:  status = fn_wav_parse(file); break;
 	case kAudioFileAIFFType:  status = fn_aiff_parse(file); break;
 	case kAudioFileCAFType:   status = fn_caf_parse(file); break;
+	case kAudioFileMP3Type:   status = fn_mp3_parse(file); break;
 	default:                  status = kAudioFileUnsupportedFileTypeError; break;
 	}
 
@@ -981,6 +1193,7 @@ OSStatus AudioFileClose(AudioFileID inAudioFile)
 		close(inAudioFile->fd);
 	}
 
+	free(inAudioFile->packet_table);
 	free(inAudioFile);
 	return status;
 }
@@ -1063,7 +1276,10 @@ OSStatus AudioFileGetProperty(AudioFileID inAudioFile, AudioFilePropertyID inPro
 
 	case kAudioFilePropertyAudioDataPacketCount:
 		if (*ioDataSize < sizeof(UInt64)) { return kAudioFileBadPropertySizeError; }
-		*(UInt64 *)outPropertyData = (UInt64)inAudioFile->frames;
+		/* One packet per frame for PCM; one per MPEG frame otherwise, which is a different number. */
+		*(UInt64 *)outPropertyData = (UInt64)((inAudioFile->type == kAudioFileMP3Type)
+		                                    ? (SInt64)inAudioFile->packet_count
+		                                    : inAudioFile->frames);
 		*ioDataSize = sizeof(UInt64);
 		return 0;
 
@@ -1178,6 +1394,44 @@ OSStatus AudioFileReadPacketData(AudioFileID inAudioFile, Boolean inUseCache, UI
 
 	if (inAudioFile == NULL || ioNumBytes == NULL || ioNumPackets == NULL || outBuffer == NULL) {
 		return kAudio_ParamError;
+	}
+
+	/* **A COMPRESSED PACKET IS READ BY INDEX, AND THE DESCRIPTIONS ARE THE ANSWER RATHER THAN AN OPTION.** Each
+	 * MPEG frame is a different size, so the caller's byte capacity decides how many fit and `outPacketDescriptions`
+	 * says where each one landed. A caller that passes NULL gets the concatenated bytes and no boundaries — which is
+	 * exactly what the packet count is for, and why the table exists. */
+	if (inAudioFile->type == kAudioFileMP3Type) {
+		UInt32 bytes = 0;
+		UInt32 packets = 0;
+		SInt64 packet = inStartingPacket;
+
+		while (packets < *ioNumPackets && packet >= 0 && packet < (SInt64)inAudioFile->packet_count) {
+			UInt32 size = inAudioFile->packet_table[packet].size;
+			UInt32 read = 0;
+			OSStatus status;
+
+			if (bytes + size > *ioNumBytes) {
+				break;
+			}
+			status = fn_read_at(inAudioFile, inAudioFile->packet_table[packet].offset,
+			                    (uint8_t *)outBuffer + bytes, size, &read);
+			if (status != 0 || read != size) {
+				break;
+			}
+			if (outPacketDescriptions != NULL) {
+				outPacketDescriptions[packets].mStartOffset = (SInt64)bytes;
+				outPacketDescriptions[packets].mVariableFramesInPacket =
+				    inAudioFile->asbd.mFramesPerPacket;
+				outPacketDescriptions[packets].mDataByteSize = size;
+			}
+			bytes += size;
+			packets++;
+			packet++;
+		}
+
+		*ioNumBytes = bytes;
+		*ioNumPackets = packets;
+		return 0;
 	}
 
 	bytes_per_frame = fn_pcm_bytes_per_frame(&inAudioFile->asbd);

@@ -85,6 +85,20 @@ endif()
 if(NOT ALSA_FOUND AND NOT PIPEWIRE_FOUND AND NOT SNDIO_FOUND)
   message(STATUS "libagora-audio: no system audio backend (null only)")
 endif()
+
+# **THE FIRST DECODER, AND THE ONE EVERY PLAYER NEEDS.** The pkg-config name is `libmpg123` (the library file is
+# `libmpg123.so`). It is **LGPL-2.1**, which is why it may live in this LGPL library at all: a GPL decoder (libmad,
+# libsidplayfp) could not, because it would relicense this component and every consumer of it. PRIVATE, like the
+# backends: no header of mpg123's reaches an installation.
+set(AGORA_AUDIO_WITH_MPG123 AUTO CACHE STRING "Build the MPEG Layer III decoder (AUTO, ON, OFF)")
+if(PKG_CONFIG_FOUND AND NOT AGORA_AUDIO_WITH_MPG123 STREQUAL "OFF")
+  pkg_check_modules(MPG123 IMPORTED_TARGET libmpg123)
+endif()
+if(MPG123_FOUND)
+  message(STATUS "libagora-audio: MPEG Layer III decoder (libmpg123 ${MPG123_VERSION})")
+elseif(AGORA_AUDIO_WITH_MPG123 STREQUAL "ON")
+  message(FATAL_ERROR "libagora-audio: AGORA_AUDIO_WITH_MPG123=ON but pkg-config found no libmpg123")
+endif()
 find_package(Threads REQUIRED)
 
 # ---------------------------------------------------------------------------
@@ -100,6 +114,7 @@ endforeach()
 add_library(Audio SHARED
     "${CMAKE_CURRENT_SOURCE_DIR}/HostTime.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/AudioFormat.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/AudioCodec.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/AudioResampler.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/AudioConverter.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/AudioFile.c"
@@ -136,6 +151,11 @@ endif()
 if(SNDIO_FOUND)
   target_compile_definitions(Audio PRIVATE AGORA_WITH_SNDIO=1)
   target_link_libraries(Audio PRIVATE PkgConfig::SNDIO)
+endif()
+
+if(MPG123_FOUND)
+  target_compile_definitions(Audio PRIVATE AGORA_AUDIO_WITH_MPG123=1)
+  target_link_libraries(Audio PRIVATE PkgConfig::MPG123)
 endif()
 
 target_include_directories(Audio

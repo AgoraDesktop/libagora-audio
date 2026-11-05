@@ -97,6 +97,29 @@ mixer for the frames the server's buffer holds and hands them back. It is delibe
 callback (`PW_STREAM_FLAG_RT_PROCESS`): the mixer takes a lock, so a late buffer is the smaller problem. The
 node shows up in `pw-dump` as `Stream/Output/Audio` named `agora-audio-output`, routed to the sink it was given.
 
+**Phase 7 — the first decoder: MPEG Layer III, and it is a SYSTEM LIBRARY.** `libmpg123` 1.32.10 (LGPL-2.1) is linked
+PRIVATE behind `-DAGORA_AUDIO_WITH_MPG123=AUTO|ON|OFF`, so a build without it refuses an MP3 by name and one with it
+plays the file. The split of work is the important part: **`AudioFile.c` walks the stream's own frame headers into a
+packet table** — there is no length field in an MP3, so the file's duration is a measurement, not a division — and
+**`ExtAudioFile.c` decodes the packets into the client's format**, because a decoder keeps state across frames and a
+converter is a ring. `AudioConverter` therefore still refuses MPEG input, exactly as its suite asserts. MEASURED: a
+three-second 44.1 kHz stereo tone decodes to 132 300 frames at the tone's own frequency, which is what `ffmpeg`
+produces for the same file (`tests/mp3.c`).
+
+**A seek is frame-accurate, and that is the finest anyone can be in this format.** MPEG's bit reservoir makes frame
+N depend on the frames before it, so `ExtAudioFileSeek` restarts the decoder at the frame that contains the sample
+asked for and drops the samples before it inside that frame; a seek back to the start is therefore bit-exact, while a
+seek into the middle is exact to the frame and not to the sample, because the encoder's delay is declared only in the
+stream's first frame. That is also why the container's packet count is *larger* than the decoded frame count: the
+encoder pads to whole frames and libmpg123 trims the padding it declares. Both numbers are asserted, separately, by
+`tests/mp3.c`.
+
+Two limits are worth naming. `AudioFileStream` — the incremental door — still reads only the three PCM containers, so
+a network stream of MP3 is refused there (and the suite measures that refusal rather than describing it). Writing is
+refused too: there is no encoder, and `AudioFileCreateWithURL` answers `kAudioFileUnsupportedFileTypeError` for
+`kAudioFileMP3Type`. The fixtures the suite reads are `ffmpeg`'s output, written when the suite is configured; with no
+`ffmpeg` the test reports a skip instead of disappearing.
+
 **Phase 6a — sndio, the BSDs' server: WRITTEN, COMPILED HERE, NOT MEASURED HERE.** `AudioHardware-sndio.c` is
 the fourth backend and the one this tree cannot exercise where it is developed: `libsndio-dev` 1.10.0 is
 installed on this machine, so the file is compiled and linked against the real header and library and its
@@ -115,10 +138,11 @@ Still to come: the `AudioQueue` input side and timelines, `AUGraph` sub-graphs, 
 selectors. `../AUDIO-PLAN.md` §9 is the schedule and §6 the
 header-by-header commitment.
 
-The three containers are ours rather than a library's: WAV is a little-endian chunk list, AIFF is a
-big-endian one with an 80-bit sample rate, and CAF is a big-endian chunk list with a 64-bit size. A
-compressed format is refused with `kAudioFileUnsupportedDataFormatError`; the codec phase brings the
-packets that would make the word interesting.
+The three PCM containers are ours rather than a library's: WAV is a little-endian chunk list, AIFF is a
+big-endian one with an 80-bit sample rate, and CAF is a big-endian chunk list with a 64-bit size. MPEG audio is
+the fourth container and the first one this door does not invent: an MP3 has no header at all, so the frame
+table is built by walking sync words, and the decoder behind it is `libmpg123` (phase 7, above). Every other
+compressed format is still refused with `kAudioFileUnsupportedDataFormatError`.
 
 ```
 $ readelf -d build/libagora-audio.so | grep -E 'NEEDED|RUNPATH'

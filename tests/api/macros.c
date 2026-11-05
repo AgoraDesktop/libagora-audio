@@ -160,6 +160,7 @@ int main(void)
 	fn_check("kAudioFileWAVEType", kAudioFileWAVEType, 1463899717);     /* 'WAVE' */
 	fn_check("kAudioFileAIFFType", kAudioFileAIFFType, 1095321158);     /* 'AIFF' */
 	fn_check("kAudioFileCAFType", kAudioFileCAFType, 1667327590);       /* 'caff' */
+	fn_check("kAudioFileMP3Type", kAudioFileMP3Type, 1297106739);       /* 'MPG3', not 'mp3 ' */
 	fn_check("kAudioFileReadPermission", kAudioFileReadPermission, 1);
 	fn_check("kAudioFileWritePermission", kAudioFileWritePermission, 2);
 	fn_check("kAudioFileReadWritePermission", kAudioFileReadWritePermission, 3);
