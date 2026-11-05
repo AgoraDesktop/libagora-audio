@@ -220,6 +220,44 @@ static OSStatus (*p_AudioFileStreamSeek)(AudioFileStreamID _Nonnull, SInt64, SIn
                                          AudioFileStreamSeekFlags * _Nonnull) = AudioFileStreamSeek;
 static OSStatus (*p_AudioFileStreamClose)(AudioFileStreamID _Nonnull) = AudioFileStreamClose;
 
+/* --- AudioToolbox/AudioQueue.h --------------------------------------------- */
+static OSStatus (*p_AudioQueueNewOutput)(const AudioStreamBasicDescription * _Nonnull,
+                                         AudioQueueOutputCallback _Nonnull, void * _Nullable,
+                                         CFRunLoopRef _Nullable, CFStringRef _Nullable, UInt32,
+                                         AudioQueueRef _Nullable * _Nonnull) = AudioQueueNewOutput;
+static OSStatus (*p_AudioQueueNewOutputWithDispatchQueue)(AudioQueueRef _Nullable * _Nonnull,
+                                                          const AudioStreamBasicDescription * _Nonnull,
+                                                          UInt32, dispatch_queue_t _Nonnull,
+                                                          AudioQueueOutputCallbackBlock _Nonnull)
+    = AudioQueueNewOutputWithDispatchQueue;
+static OSStatus (*p_AudioQueueAllocateBuffer)(AudioQueueRef _Nonnull, UInt32,
+                                              AudioQueueBufferRef _Nullable * _Nonnull)
+    = AudioQueueAllocateBuffer;
+static OSStatus (*p_AudioQueueEnqueueBuffer)(AudioQueueRef _Nonnull, AudioQueueBufferRef _Nonnull, UInt32,
+                                             const AudioStreamPacketDescription * _Nullable)
+    = AudioQueueEnqueueBuffer;
+static OSStatus (*p_AudioQueueStart)(AudioQueueRef _Nonnull, const AudioTimeStamp * _Nullable)
+    = AudioQueueStart;
+static OSStatus (*p_AudioQueueStop)(AudioQueueRef _Nonnull, Boolean) = AudioQueueStop;
+static OSStatus (*p_AudioQueueDispose)(AudioQueueRef _Nonnull, Boolean) = AudioQueueDispose;
+static OSStatus (*p_AudioQueueFreeBuffer)(AudioQueueRef _Nonnull, AudioQueueBufferRef _Nonnull)
+    = AudioQueueFreeBuffer;
+static OSStatus (*p_AudioQueueGetProperty)(AudioQueueRef _Nonnull, AudioQueuePropertyID, void * _Nonnull,
+                                           UInt32 * _Nonnull) = AudioQueueGetProperty;
+static OSStatus (*p_AudioQueueSetProperty)(AudioQueueRef _Nonnull, AudioQueuePropertyID,
+                                           const void * _Nonnull, UInt32) = AudioQueueSetProperty;
+static OSStatus (*p_AudioQueueSetParameter)(AudioQueueRef _Nonnull, AudioQueueParameterID,
+                                            AudioQueueParameterValue) = AudioQueueSetParameter;
+static OSStatus (*p_AudioQueueGetParameter)(AudioQueueRef _Nonnull, AudioQueueParameterID,
+                                            AudioQueueParameterValue * _Nonnull) = AudioQueueGetParameter;
+
+/* --- AudioToolbox/AudioServices.h ------------------------------------------ */
+static OSStatus (*p_AudioServicesCreateSystemSoundID)(CFURLRef _Nonnull, SystemSoundID * _Nonnull)
+    = AudioServicesCreateSystemSoundID;
+static OSStatus (*p_AudioServicesDisposeSystemSoundID)(SystemSoundID) = AudioServicesDisposeSystemSoundID;
+static void (*p_AudioServicesPlaySystemSound)(SystemSoundID) = AudioServicesPlaySystemSound;
+static void (*p_AudioServicesPlayAlertSound)(SystemSoundID) = AudioServicesPlayAlertSound;
+
 int main(void);
 int main(void)
 {
@@ -264,6 +302,14 @@ int main(void)
 		(void *)p_AudioFileStreamGetPropertyInfo, (void *)p_AudioFileStreamGetProperty,
 		(void *)p_AudioFileStreamSetProperty, (void *)p_AudioFileStreamSeek,
 		(void *)p_AudioFileStreamClose,
+		(void *)p_AudioQueueNewOutput, (void *)p_AudioQueueNewOutputWithDispatchQueue,
+		(void *)p_AudioQueueAllocateBuffer, (void *)p_AudioQueueEnqueueBuffer,
+		(void *)p_AudioQueueStart, (void *)p_AudioQueueStop, (void *)p_AudioQueueDispose,
+		(void *)p_AudioQueueFreeBuffer, (void *)p_AudioQueueGetProperty,
+		(void *)p_AudioQueueSetProperty, (void *)p_AudioQueueSetParameter,
+		(void *)p_AudioQueueGetParameter,
+		(void *)p_AudioServicesCreateSystemSoundID, (void *)p_AudioServicesDisposeSystemSoundID,
+		(void *)p_AudioServicesPlaySystemSound, (void *)p_AudioServicesPlayAlertSound,
 	};
 
 	return unused[0] == NULL ? 0 : 0;

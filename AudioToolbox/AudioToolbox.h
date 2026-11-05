@@ -19,5 +19,7 @@
 #include <AudioToolbox/AudioFile.h>
 #include <AudioToolbox/AudioFileStream.h>
 #include <AudioToolbox/ExtendedAudioFile.h>
+#include <AudioToolbox/AudioQueue.h>
+#include <AudioToolbox/AudioServices.h>
 
 #endif /* AGORA_AUDIOTOOLBOX_AUDIOTOOLBOX_H */

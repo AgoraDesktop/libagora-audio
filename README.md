@@ -32,6 +32,8 @@ libagora-audio/AudioToolbox/
     AudioFile.h          WAV, AIFF and CAF
     ExtendedAudioFile.h  a file that speaks the client's format
     AudioFileStream.h    the same containers, parsed as they arrive
+    AudioQueue.h         the buffered playback model
+    AudioServices.h      the system sounds, and a generated alert
 HostTime.c               the host clock over clock_gettime(CLOCK_MONOTONIC)
 AudioFormat.c            the four properties answered, and the frame arithmetic behind them
 AudioResampler.c         the windowed-sinc, arbitrary-ratio interpolator
@@ -43,14 +45,16 @@ AudioHardware.c          the object table, the property switch, the listeners, t
 AudioHardware-null.c     one device that exists everywhere, with a real data thread
 AudioHardware-alsa.c     the second backend: `snd_pcm_open` on a name, paced by its own writes
 AudioHardwareDeprecated.c  the pre-10.7 doors, translated into the object API
+AudioQueue.c             buffers in, played frames out, over the device layer
+AudioServices.c          a file and a number; the alert is generated, not vendored
 tools/refshim/           sixty lines of ours, so clang on Linux can parse Apple's headers
 tools/api-manifest.py    generates tests/api/manifest-10.12.txt from a MacOSX10.12.sdk
 tests/api/               the four identity gates
 ```
 
-**Phase 2 — the device layer, addressed through one object API, with two backends: the `null` device that
-exists everywhere, and ALSA for a machine that has a sound card.** Still to come: the PipeWire backend behind
-the same door, then `AudioQueue`, `AudioServices` and `AudioUnit`.
+**Phase 4 — playback.** The device layer (two backends: `null` and ALSA), the buffered queue over it, and the
+system sounds including a generated alert tone. Still to come: `AudioUnit` and `AUGraph`, the PipeWire
+backend, and the `libagora-app` wiring (`NSSound`, `NSBeep`) that is the point of all of it.
 `../AUDIO-PLAN.md` §9 is the schedule and §6 the header-by-header commitment.
 
 The three containers are ours rather than a library's: WAV is a little-endian chunk list, AIFF is a
@@ -125,6 +129,9 @@ manifest already holds every one of them.
   ALSA backend** against its `null` PCM — a real `snd_pcm_open`, a real write loop, no sound card — where
   everything holds except the pacing assertion, which is a fact about the plugin rather than about this
   library.
+- **`queue`** — a buffer of 0.5 played through a refilling callback measures **0.5** at the device, **0.25**
+  after the queue's volume is halved, **0.0** after a stop; a buffer enqueued twice is refused by name; and
+  the system sounds are audible: a WAV loaded by URL, and the **generated** alert tone.
 - **`file`** — WAV, AIFF and CAF each written, closed, reopened and compared with `memcmp`: **bit-exact**,
   with the byte count, packet count, duration and data format checked separately; then `ExtAudioFile`
   converting int16 → float32 → int16 exactly, and a 44.1 kHz client writing a 48 kHz file, which lands

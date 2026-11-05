@@ -5,7 +5,7 @@
 # record size, alignment and field offsets, enumeration values, typedefs, prototypes.
 # The SDK itself is never committed — only measurements of it.
 #
-# headers: CoreAudio/CoreAudioTypes.h CoreAudio/HostTime.h CoreAudio/AudioHardwareBase.h CoreAudio/AudioHardware.h AudioToolbox/AudioFormat.h AudioToolbox/AudioConverter.h AudioToolbox/AudioFile.h AudioToolbox/AudioFileStream.h AudioToolbox/ExtendedAudioFile.h
+# headers: CoreAudio/CoreAudioTypes.h CoreAudio/HostTime.h CoreAudio/AudioHardwareBase.h CoreAudio/AudioHardware.h AudioToolbox/AudioFormat.h AudioToolbox/AudioConverter.h AudioToolbox/AudioFile.h AudioToolbox/AudioFileStream.h AudioToolbox/ExtendedAudioFile.h AudioToolbox/AudioQueue.h AudioToolbox/AudioServices.h
 # framework headers staged: 38
 
 [record] AudioBalanceFade
@@ -186,6 +186,29 @@
   field 8 mCoordinates Float32[3]
   field 20 mGainScale Float32
   field 24 mOutputChannelMap const AudioChannelLayout * _Nonnull
+
+[record] AudioQueueBuffer
+  sizeof 56
+  align 8
+  field 0 mAudioDataBytesCapacity const UInt32
+  field 8 mAudioData void *const _Nonnull
+  field 16 mAudioDataByteSize UInt32
+  field 24 mUserData void * _Nullable
+  field 32 mPacketDescriptionCapacity const UInt32
+  field 40 mPacketDescriptions AudioStreamPacketDescription *const _Nullable
+  field 48 mPacketDescriptionCount UInt32
+
+[record] AudioQueueLevelMeterState
+  sizeof 8
+  align 4
+  field 0 mAveragePower Float32
+  field 4 mPeakPower Float32
+
+[record] AudioQueueParameterEvent
+  sizeof 8
+  align 4
+  field 0 mID AudioQueueParameterID
+  field 4 mValue AudioQueueParameterValue
 
 [record] AudioStreamBasicDescription
   sizeof 40
@@ -1026,6 +1049,9 @@
 [constant] kAudioHardwarePropertyUnloadingIsAllowed = 1970170980
 [constant] kAudioHardwarePropertyUserIDChanged = 1702193508
 [constant] kAudioHardwarePropertyUserSessionIsActiveOrHeadless = 1970496882
+[constant] kAudioHardwareServiceDeviceProperty_VirtualMasterBalance = 1986880099
+[constant] kAudioHardwareServiceDeviceProperty_VirtualMasterVolume = 1986885219
+[constant] kAudioHardwareServiceProperty_ServiceRestarted = 1936880500
 [constant] kAudioHardwareUnknownPropertyError = 2003332927
 [constant] kAudioHardwareUnspecifiedError = 2003329396
 [constant] kAudioHardwareUnsupportedOperationError = 1970171760
@@ -1104,12 +1130,75 @@
 [constant] kAudioPropertyWildcardChannel = 4294967295
 [constant] kAudioPropertyWildcardPropertyID = 707406378
 [constant] kAudioPropertyWildcardSection = 255
+[constant] kAudioQueueDeviceProperty_NumberChannels = 1634821219
+[constant] kAudioQueueDeviceProperty_SampleRate = 1634825074
+[constant] kAudioQueueErr_BufferEmpty = -66686
+[constant] kAudioQueueErr_BufferEnqueuedTwice = -66666
+[constant] kAudioQueueErr_BufferInQueue = -66679
+[constant] kAudioQueueErr_CannotStart = -66681
+[constant] kAudioQueueErr_CannotStartYet = -66665
+[constant] kAudioQueueErr_CodecNotFound = -66673
+[constant] kAudioQueueErr_DisposalPending = -66685
+[constant] kAudioQueueErr_EnqueueDuringReset = -66632
+[constant] kAudioQueueErr_InvalidBuffer = -66687
+[constant] kAudioQueueErr_InvalidCodecAccess = -66672
+[constant] kAudioQueueErr_InvalidDevice = -66680
+[constant] kAudioQueueErr_InvalidOfflineMode = -66626
+[constant] kAudioQueueErr_InvalidParameter = -66682
+[constant] kAudioQueueErr_InvalidProperty = -66684
+[constant] kAudioQueueErr_InvalidPropertySize = -66683
+[constant] kAudioQueueErr_InvalidPropertyValue = -66675
+[constant] kAudioQueueErr_InvalidQueueType = -66677
+[constant] kAudioQueueErr_InvalidRunState = -66678
+[constant] kAudioQueueErr_InvalidTapContext = -66669
+[constant] kAudioQueueErr_InvalidTapType = -66667
+[constant] kAudioQueueErr_Permissions = -66676
+[constant] kAudioQueueErr_PrimeTimedOut = -66674
+[constant] kAudioQueueErr_QueueInvalidated = -66671
+[constant] kAudioQueueErr_RecordUnderrun = -66668
+[constant] kAudioQueueErr_TooManyTaps = -66670
+[constant] kAudioQueueParam_Pan = 13
+[constant] kAudioQueueParam_Pitch = 3
+[constant] kAudioQueueParam_PlayRate = 2
+[constant] kAudioQueueParam_Volume = 1
+[constant] kAudioQueueParam_VolumeRampTime = 4
+[constant] kAudioQueueProcessingTap_EndOfStream = 512
+[constant] kAudioQueueProcessingTap_PostEffects = 2
+[constant] kAudioQueueProcessingTap_PreEffects = 1
+[constant] kAudioQueueProcessingTap_Siphon = 4
+[constant] kAudioQueueProcessingTap_StartOfStream = 256
+[constant] kAudioQueueProperty_ChannelLayout = 1634820972
+[constant] kAudioQueueProperty_ConverterError = 1902343781
+[constant] kAudioQueueProperty_CurrentDevice = 1634820964
+[constant] kAudioQueueProperty_CurrentLevelMeter = 1634823542
+[constant] kAudioQueueProperty_CurrentLevelMeterDB = 1634823524
+[constant] kAudioQueueProperty_DecodeBufferSizeFrames = 1684234854
+[constant] kAudioQueueProperty_EnableLevelMetering = 1634823525
+[constant] kAudioQueueProperty_EnableTimePitch = 1902081136
+[constant] kAudioQueueProperty_IsRunning = 1634824814
+[constant] kAudioQueueProperty_MagicCookie = 1634823523
+[constant] kAudioQueueProperty_MaximumOutputPacketSize = 2020569203
+[constant] kAudioQueueProperty_StreamDescription = 1634821748
+[constant] kAudioQueueProperty_TimePitchAlgorithm = 1903456353
+[constant] kAudioQueueProperty_TimePitchBypass = 1903456354
+[constant] kAudioQueueTimePitchAlgorithm_Spectral = 1936745827
+[constant] kAudioQueueTimePitchAlgorithm_TimeDomain = 1953064047
+[constant] kAudioQueueTimePitchAlgorithm_Varispeed = 1987276900
 [constant] kAudioSelectorControlClassID = 1936483188
 [constant] kAudioSelectorControlItemKindSpacer = 1936745330
 [constant] kAudioSelectorControlPropertyAvailableItems = 1935892841
 [constant] kAudioSelectorControlPropertyCurrentItem = 1935893353
 [constant] kAudioSelectorControlPropertyItemKind = 1668049771
 [constant] kAudioSelectorControlPropertyItemName = 1935894894
+[constant] kAudioServicesBadPropertySizeError = 561211770
+[constant] kAudioServicesBadSpecifierSizeError = 561213539
+[constant] kAudioServicesNoError = 0
+[constant] kAudioServicesPropertyCompletePlaybackIfAppDies = 1768318057
+[constant] kAudioServicesPropertyIsUISound = 1769174377
+[constant] kAudioServicesSystemSoundClientTimedOutError = -1501
+[constant] kAudioServicesSystemSoundExceededMaximumDurationError = -1502
+[constant] kAudioServicesSystemSoundUnspecifiedError = -1500
+[constant] kAudioServicesUnsupportedPropertyError = 1886681407
 [constant] kAudioSliderControlClassID = 1936483442
 [constant] kAudioSliderControlPropertyRange = 1935962738
 [constant] kAudioSliderControlPropertyValue = 1935962742
@@ -1243,6 +1332,9 @@
 [constant] kSMPTETimeType60Drop = 8
 [constant] kSMPTETimeUnknown = 0
 [constant] kSMPTETimeValid = 1
+[constant] kSystemSoundID_FlashScreen = 4094
+[constant] kSystemSoundID_UserPreferredAlert = 4096
+[constant] kUserPreferredAlert = 4096
 
 [typedef] AudioBalanceFade = struct AudioBalanceFade
 [typedef] AudioBalanceFadeType = UInt32
@@ -1314,7 +1406,26 @@
 [typedef] AudioObjectPropertySelector = UInt32
 [typedef] AudioPanningInfo = struct AudioPanningInfo
 [typedef] AudioPanningMode = UInt32
+[typedef] AudioQueueBuffer = struct AudioQueueBuffer
+[typedef] AudioQueueBufferRef = AudioQueueBuffer *
+[typedef] AudioQueueInputCallback = void (*)(void * _Nullable, AudioQueueRef _Nonnull, AudioQueueBufferRef _Nonnull, const AudioTimeStamp * _Nonnull, UInt32, const AudioStreamPacketDescription * _Nullable)
+[typedef] AudioQueueInputCallbackBlock = void (^)(AudioQueueRef _Nonnull, AudioQueueBufferRef _Nonnull, const AudioTimeStamp * _Nonnull, UInt32, const AudioStreamPacketDescription * _Nullable)
+[typedef] AudioQueueLevelMeterState = struct AudioQueueLevelMeterState
+[typedef] AudioQueueOutputCallback = void (*)(void * _Nullable, AudioQueueRef _Nonnull, AudioQueueBufferRef _Nonnull)
+[typedef] AudioQueueOutputCallbackBlock = void (^)(AudioQueueRef _Nonnull, AudioQueueBufferRef _Nonnull)
+[typedef] AudioQueueParameterEvent = struct AudioQueueParameterEvent
+[typedef] AudioQueueParameterID = UInt32
+[typedef] AudioQueueParameterValue = Float32
+[typedef] AudioQueueProcessingTapCallback = void (*)(void * _Nonnull, AudioQueueProcessingTapRef _Nonnull, UInt32, AudioTimeStamp * _Nonnull, AudioQueueProcessingTapFlags * _Nonnull, UInt32 * _Nonnull, AudioBufferList * _Nonnull)
+[typedef] AudioQueueProcessingTapFlags = UInt32
+[typedef] AudioQueueProcessingTapRef = struct OpaqueAudioQueueProcessingTap *
+[typedef] AudioQueuePropertyID = UInt32
+[typedef] AudioQueuePropertyListenerProc = void (*)(void * _Nullable, AudioQueueRef _Nonnull, AudioQueuePropertyID)
+[typedef] AudioQueueRef = struct OpaqueAudioQueue *
+[typedef] AudioQueueTimelineRef = struct OpaqueAudioQueueTimeline *
 [typedef] AudioSampleType = Float32
+[typedef] AudioServicesPropertyID = UInt32
+[typedef] AudioServicesSystemSoundCompletionProc = void (*)(SystemSoundID, void * _Nullable)
 [typedef] AudioStreamBasicDescription = struct AudioStreamBasicDescription
 [typedef] AudioStreamID = AudioObjectID
 [typedef] AudioStreamPacketDescription = struct AudioStreamPacketDescription
@@ -1332,6 +1443,7 @@
 [typedef] SMPTETime = struct SMPTETime
 [typedef] SMPTETimeFlags = UInt32
 [typedef] SMPTETimeType = UInt32
+[typedef] SystemSoundID = UInt32
 
 [function] AudioConvertHostTimeToNanos = UInt64 (UInt64)
 [function] AudioConvertNanosToHostTime = UInt64 (UInt64)
@@ -1407,6 +1519,13 @@
 [function] AudioHardwareGetPropertyInfo = OSStatus (AudioHardwarePropertyID, UInt32 * _Nullable, Boolean * _Nullable)
 [function] AudioHardwareRemovePropertyListener = OSStatus (AudioHardwarePropertyID, AudioHardwarePropertyListenerProc _Nonnull)
 [function] AudioHardwareRemoveRunLoopSource = OSStatus (CFRunLoopSourceRef _Nonnull)
+[function] AudioHardwareServiceAddPropertyListener = OSStatus (AudioObjectID, const AudioObjectPropertyAddress *, AudioObjectPropertyListenerProc, void *)
+[function] AudioHardwareServiceGetPropertyData = OSStatus (AudioObjectID, const AudioObjectPropertyAddress *, UInt32, const void *, UInt32 *, void *)
+[function] AudioHardwareServiceGetPropertyDataSize = OSStatus (AudioObjectID, const AudioObjectPropertyAddress *, UInt32, const void *, UInt32 *)
+[function] AudioHardwareServiceHasProperty = Boolean (AudioObjectID, const AudioObjectPropertyAddress *)
+[function] AudioHardwareServiceIsPropertySettable = OSStatus (AudioObjectID, const AudioObjectPropertyAddress *, Boolean *)
+[function] AudioHardwareServiceRemovePropertyListener = OSStatus (AudioObjectID, const AudioObjectPropertyAddress *, AudioObjectPropertyListenerProc, void *)
+[function] AudioHardwareServiceSetPropertyData = OSStatus (AudioObjectID, const AudioObjectPropertyAddress *, UInt32, const void *, UInt32, const void *)
 [function] AudioHardwareSetProperty = OSStatus (AudioHardwarePropertyID, UInt32, const void * _Nonnull)
 [function] AudioHardwareUnload = OSStatus ()
 [function] AudioObjectAddPropertyListener = OSStatus (AudioObjectID, const AudioObjectPropertyAddress * _Nonnull, AudioObjectPropertyListenerProc _Nonnull, void * _Nullable)
@@ -1419,6 +1538,52 @@
 [function] AudioObjectRemovePropertyListenerBlock = OSStatus (AudioObjectID, const AudioObjectPropertyAddress * _Nonnull, dispatch_queue_t _Nullable, AudioObjectPropertyListenerBlock _Nonnull)
 [function] AudioObjectSetPropertyData = OSStatus (AudioObjectID, const AudioObjectPropertyAddress * _Nonnull, UInt32, const void * _Nullable, UInt32, const void * _Nonnull)
 [function] AudioObjectShow = void (AudioObjectID)
+[function] AudioQueueAddPropertyListener = OSStatus (AudioQueueRef _Nonnull, AudioQueuePropertyID, AudioQueuePropertyListenerProc _Nonnull, void * _Nullable)
+[function] AudioQueueAllocateBuffer = OSStatus (AudioQueueRef _Nonnull, UInt32, AudioQueueBufferRef  _Nullable * _Nonnull)
+[function] AudioQueueAllocateBufferWithPacketDescriptions = OSStatus (AudioQueueRef _Nonnull, UInt32, UInt32, AudioQueueBufferRef  _Nullable * _Nonnull)
+[function] AudioQueueCreateTimeline = OSStatus (AudioQueueRef _Nonnull, AudioQueueTimelineRef  _Nullable * _Nonnull)
+[function] AudioQueueDeviceGetCurrentTime = OSStatus (AudioQueueRef _Nonnull, AudioTimeStamp * _Nonnull)
+[function] AudioQueueDeviceGetNearestStartTime = OSStatus (AudioQueueRef _Nonnull, AudioTimeStamp * _Nonnull, UInt32)
+[function] AudioQueueDeviceTranslateTime = OSStatus (AudioQueueRef _Nonnull, const AudioTimeStamp * _Nonnull, AudioTimeStamp * _Nonnull)
+[function] AudioQueueDispose = OSStatus (AudioQueueRef _Nonnull, Boolean)
+[function] AudioQueueDisposeTimeline = OSStatus (AudioQueueRef _Nonnull, AudioQueueTimelineRef _Nonnull)
+[function] AudioQueueEnqueueBuffer = OSStatus (AudioQueueRef _Nonnull, AudioQueueBufferRef _Nonnull, UInt32, const AudioStreamPacketDescription * _Nullable)
+[function] AudioQueueEnqueueBufferWithParameters = OSStatus (AudioQueueRef _Nonnull, AudioQueueBufferRef _Nonnull, UInt32, const AudioStreamPacketDescription * _Nullable, UInt32, UInt32, UInt32, const AudioQueueParameterEvent * _Nullable, const AudioTimeStamp * _Nullable, AudioTimeStamp * _Nullable)
+[function] AudioQueueFlush = OSStatus (AudioQueueRef _Nonnull)
+[function] AudioQueueFreeBuffer = OSStatus (AudioQueueRef _Nonnull, AudioQueueBufferRef _Nonnull)
+[function] AudioQueueGetCurrentTime = OSStatus (AudioQueueRef _Nonnull, AudioQueueTimelineRef _Nullable, AudioTimeStamp * _Nullable, Boolean * _Nullable)
+[function] AudioQueueGetParameter = OSStatus (AudioQueueRef _Nonnull, AudioQueueParameterID, AudioQueueParameterValue * _Nonnull)
+[function] AudioQueueGetProperty = OSStatus (AudioQueueRef _Nonnull, AudioQueuePropertyID, void * _Nonnull, UInt32 * _Nonnull)
+[function] AudioQueueGetPropertySize = OSStatus (AudioQueueRef _Nonnull, AudioQueuePropertyID, UInt32 * _Nonnull)
+[function] AudioQueueNewInput = OSStatus (const AudioStreamBasicDescription * _Nonnull, AudioQueueInputCallback _Nonnull, void * _Nullable, CFRunLoopRef _Nullable, CFStringRef _Nullable, UInt32, AudioQueueRef  _Nullable * _Nonnull)
+[function] AudioQueueNewInputWithDispatchQueue = OSStatus (AudioQueueRef  _Nullable * _Nonnull, const AudioStreamBasicDescription * _Nonnull, UInt32, dispatch_queue_t _Nonnull, AudioQueueInputCallbackBlock _Nonnull)
+[function] AudioQueueNewOutput = OSStatus (const AudioStreamBasicDescription * _Nonnull, AudioQueueOutputCallback _Nonnull, void * _Nullable, CFRunLoopRef _Nullable, CFStringRef _Nullable, UInt32, AudioQueueRef  _Nullable * _Nonnull)
+[function] AudioQueueNewOutputWithDispatchQueue = OSStatus (AudioQueueRef  _Nullable * _Nonnull, const AudioStreamBasicDescription * _Nonnull, UInt32, dispatch_queue_t _Nonnull, AudioQueueOutputCallbackBlock _Nonnull)
+[function] AudioQueueOfflineRender = OSStatus (AudioQueueRef _Nonnull, const AudioTimeStamp * _Nonnull, AudioQueueBufferRef _Nonnull, UInt32)
+[function] AudioQueuePause = OSStatus (AudioQueueRef _Nonnull)
+[function] AudioQueuePrime = OSStatus (AudioQueueRef _Nonnull, UInt32, UInt32 * _Nullable)
+[function] AudioQueueProcessingTapDispose = OSStatus (AudioQueueProcessingTapRef _Nonnull)
+[function] AudioQueueProcessingTapGetQueueTime = OSStatus (AudioQueueProcessingTapRef _Nonnull, Float64 * _Nonnull, UInt32 * _Nonnull)
+[function] AudioQueueProcessingTapGetSourceAudio = OSStatus (AudioQueueProcessingTapRef _Nonnull, UInt32, AudioTimeStamp * _Nonnull, AudioQueueProcessingTapFlags * _Nonnull, UInt32 * _Nonnull, AudioBufferList * _Nonnull)
+[function] AudioQueueProcessingTapNew = OSStatus (AudioQueueRef _Nonnull, AudioQueueProcessingTapCallback _Nonnull, void * _Nullable, AudioQueueProcessingTapFlags, UInt32 * _Nonnull, AudioStreamBasicDescription * _Nonnull, AudioQueueProcessingTapRef  _Nullable * _Nonnull)
+[function] AudioQueueRemovePropertyListener = OSStatus (AudioQueueRef _Nonnull, AudioQueuePropertyID, AudioQueuePropertyListenerProc _Nonnull, void * _Nullable)
+[function] AudioQueueReset = OSStatus (AudioQueueRef _Nonnull)
+[function] AudioQueueSetOfflineRenderFormat = OSStatus (AudioQueueRef _Nonnull, const AudioStreamBasicDescription * _Nullable, const AudioChannelLayout * _Nullable)
+[function] AudioQueueSetParameter = OSStatus (AudioQueueRef _Nonnull, AudioQueueParameterID, AudioQueueParameterValue)
+[function] AudioQueueSetProperty = OSStatus (AudioQueueRef _Nonnull, AudioQueuePropertyID, const void * _Nonnull, UInt32)
+[function] AudioQueueStart = OSStatus (AudioQueueRef _Nonnull, const AudioTimeStamp * _Nullable)
+[function] AudioQueueStop = OSStatus (AudioQueueRef _Nonnull, Boolean)
+[function] AudioServicesAddSystemSoundCompletion = OSStatus (SystemSoundID, CFRunLoopRef _Nullable, CFStringRef _Nullable, AudioServicesSystemSoundCompletionProc _Nonnull, void * _Nullable)
+[function] AudioServicesCreateSystemSoundID = OSStatus (CFURLRef _Nonnull, SystemSoundID * _Nonnull)
+[function] AudioServicesDisposeSystemSoundID = OSStatus (SystemSoundID)
+[function] AudioServicesGetProperty = OSStatus (AudioServicesPropertyID, UInt32, const void * _Nullable, UInt32 * _Nonnull, void * _Nullable)
+[function] AudioServicesGetPropertyInfo = OSStatus (AudioServicesPropertyID, UInt32, const void * _Nullable, UInt32 * _Nullable, Boolean * _Nullable)
+[function] AudioServicesPlayAlertSound = void (SystemSoundID)
+[function] AudioServicesPlayAlertSoundWithCompletion = void (SystemSoundID, void (^ _Nullable)(void))
+[function] AudioServicesPlaySystemSound = void (SystemSoundID)
+[function] AudioServicesPlaySystemSoundWithCompletion = void (SystemSoundID, void (^ _Nullable)(void))
+[function] AudioServicesRemoveSystemSoundCompletion = void (SystemSoundID)
+[function] AudioServicesSetProperty = OSStatus (AudioServicesPropertyID, UInt32, const void * _Nullable, UInt32, const void * _Nonnull)
 [function] AudioStreamAddPropertyListener = OSStatus (AudioStreamID, UInt32, AudioDevicePropertyID, AudioStreamPropertyListenerProc _Nonnull, void * _Nullable)
 [function] AudioStreamGetProperty = OSStatus (AudioStreamID, UInt32, AudioDevicePropertyID, UInt32 * _Nonnull, void * _Nonnull)
 [function] AudioStreamGetPropertyInfo = OSStatus (AudioStreamID, UInt32, AudioDevicePropertyID, UInt32 * _Nullable, Boolean * _Nullable)

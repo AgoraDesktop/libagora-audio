@@ -79,6 +79,8 @@ add_library(Audio SHARED
     "${CMAKE_CURRENT_SOURCE_DIR}/AudioHardware-null.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/AudioHardware-alsa.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/AudioHardwareDeprecated.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/AudioQueue.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/AudioServices.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/ExtAudioFile.c")
 
 set_target_properties(Audio PROPERTIES OUTPUT_NAME agora-audio)

@@ -1167,6 +1167,10 @@ OSStatus AudioDeviceStop(AudioObjectID inDevice, AudioDeviceIOProcID inProcID)
 			g_hal.driver->stop(device->id);
 		}
 		device->running = false;
+		/* A STOPPED DEVICE PRODUCES SILENCE, and says so: the mixer's last output is stale the moment the
+		 * data thread stops, and a caller (or a suite) that asks "what came out" must not be handed the
+		 * value from before the stop. */
+		device->last_peak = 0.0f;
 		fn_notify(device->id, &running);
 	}
 
