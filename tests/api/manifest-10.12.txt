@@ -5,8 +5,107 @@
 # record size, alignment and field offsets, enumeration values, typedefs, prototypes.
 # The SDK itself is never committed — only measurements of it.
 #
-# headers: CoreAudio/CoreAudioTypes.h CoreAudio/HostTime.h CoreAudio/AudioHardwareBase.h CoreAudio/AudioHardware.h AudioToolbox/AudioFormat.h AudioToolbox/AudioConverter.h AudioToolbox/AudioFile.h AudioToolbox/AudioFileStream.h AudioToolbox/ExtendedAudioFile.h AudioToolbox/AudioQueue.h AudioToolbox/AudioServices.h
+# headers: CoreAudio/CoreAudioTypes.h CoreAudio/HostTime.h CoreAudio/AudioHardwareBase.h CoreAudio/AudioHardware.h AudioToolbox/AudioFormat.h AudioToolbox/AudioConverter.h AudioToolbox/AudioFile.h AudioToolbox/AudioFileStream.h AudioToolbox/ExtendedAudioFile.h AudioToolbox/AudioQueue.h AudioToolbox/AudioServices.h AudioToolbox/AudioComponent.h AudioToolbox/AudioUnit.h AudioToolbox/AudioOutputUnit.h
 # framework headers staged: 38
+
+[record] AUChannelInfo
+  sizeof 4
+  align 2
+  field 0 inChannels SInt16
+  field 2 outChannels SInt16
+
+[record] AUDependentParameter
+  sizeof 8
+  align 4
+  field 0 mScope AudioUnitScope
+  field 4 mParameterID AudioUnitParameterID
+
+[record] AUDistanceAttenuationData
+  sizeof 12
+  align 4
+  field 0 inNumberOfPairs UInt32
+  field 4 pairs struct (unnamed struct at /tmp/agora-api-9jypezrx/stage/AudioToolbox/AudioUnitProperties.h:1943:2)[1]
+
+[record] AUHostIdentifier
+  sizeof 16
+  align 8
+  field 0 hostName CFStringRef _Nonnull
+  field 8 hostVersion struct AUNumVersion
+  field 8 nonRelRev UInt8
+  field 9 stage UInt8
+  field 10 minorAndBugRev UInt8
+  field 11 majorRev UInt8
+
+[record] AUHostVersionIdentifier
+  sizeof 16
+  align 8
+  field 0 hostName CFStringRef _Nonnull
+  field 8 hostVersion UInt32
+
+[record] AUInputSamplesInOutputCallbackStruct
+  sizeof 16
+  align 8
+  field 0 inputToOutputCallback AUInputSamplesInOutputCallback _Nonnull
+  field 8 userData void * _Nullable
+
+[record] AUMIDIOutputCallbackStruct
+  sizeof 16
+  align 8
+  field 0 midiOutputCallback AUMIDIOutputCallback _Nonnull
+  field 8 userData void * _Nullable
+
+[record] AUNumVersion
+  sizeof 4
+  align 1
+  field 0 nonRelRev UInt8
+  field 1 stage UInt8
+  field 2 minorAndBugRev UInt8
+  field 3 majorRev UInt8
+
+[record] AUParameterMIDIMapping
+  sizeof 32
+  align 4
+  field 0 mScope AudioUnitScope
+  field 4 mElement AudioUnitElement
+  field 8 mParameterID AudioUnitParameterID
+  field 12 mFlags AUParameterMIDIMappingFlags
+  field 16 mSubRangeMin AudioUnitParameterValue
+  field 20 mSubRangeMax AudioUnitParameterValue
+  field 24 mStatus UInt8
+  field 25 mData1 UInt8
+  field 26 reserved1 UInt8
+  field 27 reserved2 UInt8
+  field 28 reserved3 UInt32
+
+[record] AUPreset
+  sizeof 16
+  align 8
+  field 0 presetNumber SInt32
+  field 8 presetName CFStringRef _Nullable
+
+[record] AURenderCallbackStruct
+  sizeof 16
+  align 8
+  field 0 inputProc AURenderCallback _Nullable
+  field 8 inputProcRefCon void * _Nullable
+
+[record] AUSamplerBankPresetData
+  sizeof 16
+  align 8
+  field 0 bankURL CFURLRef _Nonnull
+  field 8 bankMSB UInt8
+  field 9 bankLSB UInt8
+  field 10 presetID UInt8
+  field 11 reserved UInt8
+
+[record] AUSamplerInstrumentData
+  sizeof 16
+  align 8
+  field 0 fileURL CFURLRef _Nonnull
+  field 8 instrumentType UInt8
+  field 9 bankMSB UInt8
+  field 10 bankLSB UInt8
+  field 11 presetID UInt8
 
 [record] AudioBalanceFade
   sizeof 24
@@ -58,6 +157,35 @@
   field 0 mType OSType
   field 4 mSubType OSType
   field 8 mManufacturer OSType
+
+[record] AudioCodecMagicCookieInfo
+  sizeof 16
+  align 8
+  field 0 mMagicCookieSize UInt32
+  field 8 mMagicCookie const void * _Nullable
+
+[record] AudioCodecPrimeInfo
+  sizeof 8
+  align 4
+  field 0 leadingFrames UInt32
+  field 4 trailingFrames UInt32
+
+[record] AudioComponentDescription
+  sizeof 20
+  align 4
+  field 0 componentType OSType
+  field 4 componentSubType OSType
+  field 8 componentManufacturer OSType
+  field 12 componentFlags UInt32
+  field 16 componentFlagsMask UInt32
+
+[record] AudioComponentPlugInInterface
+  sizeof 32
+  align 8
+  field 0 Open OSStatus (* _Nonnull)(void * _Nonnull, AudioComponentInstance _Nonnull)
+  field 8 Close OSStatus (* _Nonnull)(void * _Nonnull)
+  field 16 Lookup AudioComponentMethod  _Nullable (* _Nonnull)(SInt16)
+  field 24 reserved void * _Nullable
 
 [record] AudioConverterPrimeInfo
   sizeof 8
@@ -178,6 +306,28 @@
   field 4 mScope AudioObjectPropertyScope
   field 8 mElement AudioObjectPropertyElement
 
+[record] AudioOutputUnitStartAtTimeParams
+  sizeof 72
+  align 8
+  field 0 mTimestamp struct AudioTimeStamp
+  field 0 mSampleTime Float64
+  field 8 mHostTime UInt64
+  field 16 mRateScalar Float64
+  field 24 mWordClockTime UInt64
+  field 32 mSMPTETime struct SMPTETime
+  field 32 mSubframes SInt16
+  field 34 mSubframeDivisor SInt16
+  field 36 mCounter UInt32
+  field 40 mType SMPTETimeType
+  field 44 mFlags SMPTETimeFlags
+  field 48 mHours SInt16
+  field 50 mMinutes SInt16
+  field 52 mSeconds SInt16
+  field 54 mFrames SInt16
+  field 56 mFlags AudioTimeStampFlags
+  field 60 mReserved UInt32
+  field 64 mFlags UInt32
+
 [record] AudioPanningInfo
   sizeof 32
   align 8
@@ -267,6 +417,168 @@
   field 56 mFlags AudioTimeStampFlags
   field 60 mReserved UInt32
 
+[record] AudioUnitCocoaViewInfo
+  sizeof 16
+  align 8
+  field 0 mCocoaAUViewBundleLocation CFURLRef _Nonnull
+  field 8 mCocoaAUViewClass CFStringRef _Nonnull[1]
+
+[record] AudioUnitConnection
+  sizeof 16
+  align 8
+  field 0 sourceAudioUnit AudioUnit _Nonnull
+  field 8 sourceOutputNumber UInt32
+  field 12 destInputNumber UInt32
+
+[record] AudioUnitExternalBuffer
+  sizeof 16
+  align 8
+  field 0 buffer Byte * _Nonnull
+  field 8 size UInt32
+
+[record] AudioUnitFrequencyResponseBin
+  sizeof 16
+  align 8
+  field 0 mFrequency Float64
+  field 8 mMagnitude Float64
+
+[record] AudioUnitMIDIControlMapping
+  sizeof 12
+  align 4
+  field 0 midiNRPN UInt16
+  field 2 midiControl UInt8
+  field 3 scope UInt8
+  field 4 element AudioUnitElement
+  field 8 parameter AudioUnitParameterID
+
+[record] AudioUnitMeterClipping
+  sizeof 8
+  align 4
+  field 0 peakValueSinceLastCall Float32
+  field 4 sawInfinity Boolean
+  field 5 sawNotANumber Boolean
+
+[record] AudioUnitOtherPluginDesc
+  sizeof 16
+  align 4
+  field 0 format UInt32
+  field 4 plugin struct AudioClassDescription
+  field 4 mType OSType
+  field 8 mSubType OSType
+  field 12 mManufacturer OSType
+
+[record] AudioUnitParameter
+  sizeof 24
+  align 8
+  field 0 mAudioUnit AudioUnit _Nonnull
+  field 8 mParameterID AudioUnitParameterID
+  field 12 mScope AudioUnitScope
+  field 16 mElement AudioUnitElement
+
+[record] AudioUnitParameterEvent
+  sizeof 32
+  align 4
+  field 0 scope AudioUnitScope
+  field 4 element AudioUnitElement
+  field 8 parameter AudioUnitParameterID
+  field 12 eventType AUParameterEventType
+  field 16 eventValues union AudioUnitParameterEvent::(unnamed at /tmp/agora-api-9jypezrx/stage/AudioToolbox/AUComponent.h:795:2)
+  field 16 ramp struct AudioUnitParameterEvent::(unnamed at /tmp/agora-api-9jypezrx/stage/AudioToolbox/AUComponent.h:797:3)
+  field 16 startBufferOffset SInt32
+  field 20 durationInFrames UInt32
+  field 24 startValue AudioUnitParameterValue
+  field 28 endValue AudioUnitParameterValue
+  field 16 immediate struct AudioUnitParameterEvent::(unnamed at /tmp/agora-api-9jypezrx/stage/AudioToolbox/AUComponent.h:805:3)
+  field 16 bufferOffset UInt32
+  field 20 value AudioUnitParameterValue
+
+[record] AudioUnitParameterHistoryInfo
+  sizeof 8
+  align 4
+  field 0 updatesPerSecond Float32
+  field 4 historyDurationInSeconds Float32
+
+[record] AudioUnitParameterInfo
+  sizeof 104
+  align 8
+  field 0 name char[52]
+  field 56 unitName CFStringRef _Nullable
+  field 64 clumpID UInt32
+  field 72 cfNameString CFStringRef _Nullable
+  field 80 unit AudioUnitParameterUnit
+  field 84 minValue AudioUnitParameterValue
+  field 88 maxValue AudioUnitParameterValue
+  field 92 defaultValue AudioUnitParameterValue
+  field 96 flags AudioUnitParameterOptions
+
+[record] AudioUnitParameterNameInfo
+  sizeof 16
+  align 8
+  field 0 inID AudioUnitParameterID
+  field 4 inDesiredLength SInt32
+  field 8 outName CFStringRef _Nullable
+
+[record] AudioUnitParameterStringFromValue
+  sizeof 24
+  align 8
+  field 0 inParamID AudioUnitParameterID
+  field 8 inValue const AudioUnitParameterValue * _Nonnull
+  field 16 outString CFStringRef _Nullable
+
+[record] AudioUnitParameterValueFromString
+  sizeof 24
+  align 8
+  field 0 inParamID AudioUnitParameterID
+  field 8 inString CFStringRef _Nonnull
+  field 16 outValue AudioUnitParameterValue
+
+[record] AudioUnitParameterValueName
+  sizeof 24
+  align 8
+  field 0 inParamID AudioUnitParameterID
+  field 8 inValue const Float32 * _Nonnull
+  field 16 outName CFStringRef _Nonnull
+
+[record] AudioUnitParameterValueTranslation
+  sizeof 32
+  align 4
+  field 0 otherDesc struct AudioUnitOtherPluginDesc
+  field 0 format UInt32
+  field 4 plugin struct AudioClassDescription
+  field 4 mType OSType
+  field 8 mSubType OSType
+  field 12 mManufacturer OSType
+  field 16 otherParamID UInt32
+  field 20 otherValue Float32
+  field 24 auParamID AudioUnitParameterID
+  field 28 auValue AudioUnitParameterValue
+
+[record] AudioUnitPresetMAS_SettingData
+  sizeof 16
+  align 4
+  field 0 isStockSetting UInt32
+  field 4 settingID UInt32
+  field 8 dataLen UInt32
+  field 12 data UInt8[1]
+
+[record] AudioUnitPresetMAS_Settings
+  sizeof 36
+  align 4
+  field 0 manufacturerID UInt32
+  field 4 effectID UInt32
+  field 8 variantID UInt32
+  field 12 settingsVersion UInt32
+  field 16 numberOfSettings UInt32
+  field 20 settings AudioUnitPresetMAS_SettingData[1]
+
+[record] AudioUnitProperty
+  sizeof 24
+  align 8
+  field 0 mAudioUnit AudioUnit _Nonnull
+  field 8 mPropertyID AudioUnitPropertyID
+  field 12 mScope AudioUnitScope
+  field 16 mElement AudioUnitElement
+
 [record] AudioValueRange
   sizeof 16
   align 8
@@ -301,6 +613,43 @@
   field 56 mSubType OSType
   field 60 mManufacturer OSType
 
+[record] HostCallbackInfo
+  sizeof 40
+  align 8
+  field 0 hostUserData void * _Nullable
+  field 8 beatAndTempoProc HostCallback_GetBeatAndTempo _Nullable
+  field 16 musicalTimeLocationProc HostCallback_GetMusicalTimeLocation _Nullable
+  field 24 transportStateProc HostCallback_GetTransportState _Nullable
+  field 32 transportStateProc2 HostCallback_GetTransportState2 _Nullable
+
+[record] MixerDistanceParams
+  sizeof 12
+  align 4
+  field 0 mReferenceDistance Float32
+  field 4 mMaxDistance Float32
+  field 8 mMaxAttenuation Float32
+
+[record] MusicDeviceNoteParams
+  sizeof 20
+  align 4
+  field 0 argCount UInt32
+  field 4 mPitch Float32
+  field 8 mVelocity Float32
+  field 12 mControls NoteParamsControlValue[1]
+
+[record] MusicDeviceStdNoteParams
+  sizeof 12
+  align 4
+  field 0 argCount UInt32
+  field 4 mPitch Float32
+  field 8 mVelocity Float32
+
+[record] NoteParamsControlValue
+  sizeof 8
+  align 4
+  field 0 mID AudioUnitParameterID
+  field 4 mValue AudioUnitParameterValue
+
 [record] SMPTETime
   sizeof 24
   align 4
@@ -313,6 +662,61 @@
   field 18 mMinutes SInt16
   field 20 mSeconds SInt16
   field 22 mFrames SInt16
+
+[record] ScheduledAudioFileRegion
+  sizeof 112
+  align 8
+  field 0 mTimeStamp struct AudioTimeStamp
+  field 0 mSampleTime Float64
+  field 8 mHostTime UInt64
+  field 16 mRateScalar Float64
+  field 24 mWordClockTime UInt64
+  field 32 mSMPTETime struct SMPTETime
+  field 32 mSubframes SInt16
+  field 34 mSubframeDivisor SInt16
+  field 36 mCounter UInt32
+  field 40 mType SMPTETimeType
+  field 44 mFlags SMPTETimeFlags
+  field 48 mHours SInt16
+  field 50 mMinutes SInt16
+  field 52 mSeconds SInt16
+  field 54 mFrames SInt16
+  field 56 mFlags AudioTimeStampFlags
+  field 60 mReserved UInt32
+  field 64 mCompletionProc ScheduledAudioFileRegionCompletionProc _Nullable
+  field 72 mCompletionProcUserData void * _Nullable
+  field 80 mAudioFile struct OpaqueAudioFileID * _Nonnull
+  field 88 mLoopCount UInt32
+  field 96 mStartFrame SInt64
+  field 104 mFramesToPlay UInt32
+
+[record] ScheduledAudioSlice
+  sizeof 112
+  align 8
+  field 0 mTimeStamp struct AudioTimeStamp
+  field 0 mSampleTime Float64
+  field 8 mHostTime UInt64
+  field 16 mRateScalar Float64
+  field 24 mWordClockTime UInt64
+  field 32 mSMPTETime struct SMPTETime
+  field 32 mSubframes SInt16
+  field 34 mSubframeDivisor SInt16
+  field 36 mCounter UInt32
+  field 40 mType SMPTETimeType
+  field 44 mFlags SMPTETimeFlags
+  field 48 mHours SInt16
+  field 50 mMinutes SInt16
+  field 52 mSeconds SInt16
+  field 54 mFrames SInt16
+  field 56 mFlags AudioTimeStampFlags
+  field 60 mReserved UInt32
+  field 64 mCompletionProc ScheduledAudioSliceCompletionProc _Nullable
+  field 72 mCompletionProcUserData void * _Nonnull
+  field 80 mFlags AUScheduledAudioSliceFlags
+  field 84 mReserved UInt32
+  field 88 mReserved2 void * _Nullable
+  field 96 mNumberFrames UInt32
+  field 104 mBufferList AudioBufferList * _Nonnull
 
 [record] __NSConstantString_tag
   sizeof 32
@@ -330,6 +734,136 @@
   field 8 overflow_arg_area void *
   field 16 reg_save_area void *
 
+[constant] k3DMixerAttenuationCurve_Exponential = 1
+[constant] k3DMixerAttenuationCurve_Inverse = 2
+[constant] k3DMixerAttenuationCurve_Linear = 3
+[constant] k3DMixerAttenuationCurve_Power = 0
+[constant] k3DMixerParam_Azimuth = 0
+[constant] k3DMixerParam_Distance = 2
+[constant] k3DMixerParam_Elevation = 1
+[constant] k3DMixerParam_Gain = 3
+[constant] k3DMixerParam_GlobalReverbGain = 6
+[constant] k3DMixerParam_MaxGain = 10
+[constant] k3DMixerParam_MinGain = 9
+[constant] k3DMixerParam_ObstructionAttenuation = 8
+[constant] k3DMixerParam_OcclusionAttenuation = 7
+[constant] k3DMixerParam_PlaybackRate = 4
+[constant] k3DMixerParam_PostAveragePower = 3000
+[constant] k3DMixerParam_PostPeakHoldLevel = 4000
+[constant] k3DMixerParam_PreAveragePower = 1000
+[constant] k3DMixerParam_PrePeakHoldLevel = 2000
+[constant] k3DMixerParam_ReverbBlend = 5
+[constant] k3DMixerRenderingFlags_ConstantReverbBlend = 64
+[constant] k3DMixerRenderingFlags_DistanceAttenuation = 4
+[constant] k3DMixerRenderingFlags_DistanceDiffusion = 16
+[constant] k3DMixerRenderingFlags_DistanceFilter = 8
+[constant] k3DMixerRenderingFlags_DopplerShift = 2
+[constant] k3DMixerRenderingFlags_InterAuralDelay = 1
+[constant] k3DMixerRenderingFlags_LinearDistanceAttenuation = 32
+[constant] kAUGroupParameterID_AllNotesOff = 123
+[constant] kAUGroupParameterID_AllSoundOff = 120
+[constant] kAUGroupParameterID_ChannelPressure = 208
+[constant] kAUGroupParameterID_DataEntry = 6
+[constant] kAUGroupParameterID_DataEntry_LSB = 38
+[constant] kAUGroupParameterID_Expression = 11
+[constant] kAUGroupParameterID_Expression_LSB = 43
+[constant] kAUGroupParameterID_Foot = 4
+[constant] kAUGroupParameterID_Foot_LSB = 36
+[constant] kAUGroupParameterID_KeyPressure = 160
+[constant] kAUGroupParameterID_KeyPressure_FirstKey = 256
+[constant] kAUGroupParameterID_KeyPressure_LastKey = 383
+[constant] kAUGroupParameterID_ModWheel = 1
+[constant] kAUGroupParameterID_ModWheel_LSB = 33
+[constant] kAUGroupParameterID_Pan = 10
+[constant] kAUGroupParameterID_Pan_LSB = 42
+[constant] kAUGroupParameterID_PitchBend = 224
+[constant] kAUGroupParameterID_ResetAllControllers = 121
+[constant] kAUGroupParameterID_Sostenuto = 66
+[constant] kAUGroupParameterID_Sustain = 64
+[constant] kAUGroupParameterID_Volume = 7
+[constant] kAUGroupParameterID_Volume_LSB = 39
+[constant] kAULowShelfParam_CutoffFrequency = 0
+[constant] kAULowShelfParam_Gain = 1
+[constant] kAUMIDISynthProperty_EnablePreload = 4119
+[constant] kAUNBandEQFilterType_2ndOrderButterworthHighPass = 2
+[constant] kAUNBandEQFilterType_2ndOrderButterworthLowPass = 1
+[constant] kAUNBandEQFilterType_BandPass = 5
+[constant] kAUNBandEQFilterType_BandStop = 6
+[constant] kAUNBandEQFilterType_HighShelf = 8
+[constant] kAUNBandEQFilterType_LowShelf = 7
+[constant] kAUNBandEQFilterType_Parametric = 0
+[constant] kAUNBandEQFilterType_ResonantHighPass = 4
+[constant] kAUNBandEQFilterType_ResonantHighShelf = 10
+[constant] kAUNBandEQFilterType_ResonantLowPass = 3
+[constant] kAUNBandEQFilterType_ResonantLowShelf = 9
+[constant] kAUNBandEQParam_Bandwidth = 5000
+[constant] kAUNBandEQParam_BypassBand = 1000
+[constant] kAUNBandEQParam_FilterType = 2000
+[constant] kAUNBandEQParam_Frequency = 3000
+[constant] kAUNBandEQParam_Gain = 4000
+[constant] kAUNBandEQParam_GlobalGain = 0
+[constant] kAUNBandEQProperty_BiquadCoefficients = 2203
+[constant] kAUNBandEQProperty_MaxNumberOfBands = 2201
+[constant] kAUNBandEQProperty_NumberOfBands = 2200
+[constant] kAUNetReceiveParam_NumParameters = 1
+[constant] kAUNetReceiveParam_Status = 0
+[constant] kAUNetReceiveProperty_Hostname = 3511
+[constant] kAUNetReceiveProperty_Password = 3512
+[constant] kAUNetSendNumPresetFormats = 18
+[constant] kAUNetSendParam_NumParameters = 1
+[constant] kAUNetSendParam_Status = 0
+[constant] kAUNetSendPresetFormat_AAC_128kbpspc = 7
+[constant] kAUNetSendPresetFormat_AAC_32kbpspc = 13
+[constant] kAUNetSendPresetFormat_AAC_40kbpspc = 12
+[constant] kAUNetSendPresetFormat_AAC_48kbpspc = 11
+[constant] kAUNetSendPresetFormat_AAC_64kbpspc = 10
+[constant] kAUNetSendPresetFormat_AAC_80kbpspc = 9
+[constant] kAUNetSendPresetFormat_AAC_96kbpspc = 8
+[constant] kAUNetSendPresetFormat_AAC_LD_32kbpspc = 17
+[constant] kAUNetSendPresetFormat_AAC_LD_40kbpspc = 16
+[constant] kAUNetSendPresetFormat_AAC_LD_48kbpspc = 15
+[constant] kAUNetSendPresetFormat_AAC_LD_64kbpspc = 14
+[constant] kAUNetSendPresetFormat_IMA4 = 6
+[constant] kAUNetSendPresetFormat_Lossless16 = 4
+[constant] kAUNetSendPresetFormat_Lossless24 = 3
+[constant] kAUNetSendPresetFormat_PCMFloat32 = 0
+[constant] kAUNetSendPresetFormat_PCMInt16 = 2
+[constant] kAUNetSendPresetFormat_PCMInt24 = 1
+[constant] kAUNetSendPresetFormat_ULaw = 5
+[constant] kAUNetSendProperty_Disconnect = 3517
+[constant] kAUNetSendProperty_Password = 3518
+[constant] kAUNetSendProperty_PortNum = 3513
+[constant] kAUNetSendProperty_ServiceName = 3516
+[constant] kAUNetSendProperty_TransmissionFormat = 3514
+[constant] kAUNetSendProperty_TransmissionFormatIndex = 3515
+[constant] kAUNetStatus_Connected = 1
+[constant] kAUNetStatus_Connecting = 4
+[constant] kAUNetStatus_Listening = 5
+[constant] kAUNetStatus_NotConnected = 0
+[constant] kAUNetStatus_Overflow = 2
+[constant] kAUNetStatus_Underflow = 3
+[constant] kAUParameterMIDIMapping_AnyChannelFlag = 1
+[constant] kAUParameterMIDIMapping_AnyNoteFlag = 2
+[constant] kAUParameterMIDIMapping_Bipolar = 16
+[constant] kAUParameterMIDIMapping_Bipolar_On = 32
+[constant] kAUParameterMIDIMapping_SubRange = 4
+[constant] kAUParameterMIDIMapping_Toggle = 8
+[constant] kAUSamplerParam_CoarseTuning = 901
+[constant] kAUSamplerParam_FineTuning = 902
+[constant] kAUSamplerParam_Gain = 900
+[constant] kAUSamplerParam_Pan = 903
+[constant] kAUSamplerProperty_BankAndPreset = 4100
+[constant] kAUSamplerProperty_LoadAudioFiles = 4101
+[constant] kAUSamplerProperty_LoadInstrument = 4102
+[constant] kAUSamplerProperty_LoadPresetFromBank = 4100
+[constant] kAUSampler_DefaultBankLSB = 0
+[constant] kAUSampler_DefaultMelodicBankMSB = 121
+[constant] kAUSampler_DefaultPercussionBankMSB = 120
+[constant] kAUVoiceIOErr_UnexpectedNumberOfInputChannels = -66784
+[constant] kAUVoiceIOProperty_BypassVoiceProcessing = 2100
+[constant] kAUVoiceIOProperty_MuteOutput = 2104
+[constant] kAUVoiceIOProperty_VoiceProcessingEnableAGC = 2101
+[constant] kAUVoiceIOProperty_VoiceProcessingQuality = 2103
 [constant] kAppleLosslessFormatFlag_16BitSourceData = 1
 [constant] kAppleLosslessFormatFlag_20BitSourceData = 2
 [constant] kAppleLosslessFormatFlag_24BitSourceData = 3
@@ -589,6 +1123,128 @@
 [constant] kAudioClockSourceControlClassID = 1668047723
 [constant] kAudioClockSourceControlPropertyItemKind = 1668049771
 [constant] kAudioClockSourceItemKindInternal = 1768846368
+[constant] kAudioCodecAppendInputBufferListSelect = 9
+[constant] kAudioCodecAppendInputDataSelect = 6
+[constant] kAudioCodecBadPropertySizeError = 561211770
+[constant] kAudioCodecBitRateControlMode_Constant = 0
+[constant] kAudioCodecBitRateControlMode_LongTermAverage = 1
+[constant] kAudioCodecBitRateControlMode_Variable = 3
+[constant] kAudioCodecBitRateControlMode_VariableConstrained = 2
+[constant] kAudioCodecBitRateFormat = 1633903206
+[constant] kAudioCodecBitRateFormat_ABR = 1
+[constant] kAudioCodecBitRateFormat_CBR = 0
+[constant] kAudioCodecBitRateFormat_VBR = 2
+[constant] kAudioCodecDelayMode_Compatibility = 0
+[constant] kAudioCodecDelayMode_Minimum = 1
+[constant] kAudioCodecDelayMode_Optimal = 2
+[constant] kAudioCodecDoesSampleRateConversion = 1819112035
+[constant] kAudioCodecExtendFrequencies = 1633903974
+[constant] kAudioCodecGetPropertyInfoSelect = 1
+[constant] kAudioCodecGetPropertySelect = 2
+[constant] kAudioCodecIllegalOperationError = 1852797029
+[constant] kAudioCodecInitializeSelect = 4
+[constant] kAudioCodecInputFormatsForOutputFormat = 1768305775
+[constant] kAudioCodecNoError = 0
+[constant] kAudioCodecNotEnoughBufferSpaceError = 560100710
+[constant] kAudioCodecOutputFormatsForInputFormat = 1868969065
+[constant] kAudioCodecOutputPrecedence = 1869639794
+[constant] kAudioCodecOutputPrecedenceBitRate = 1
+[constant] kAudioCodecOutputPrecedenceNone = 0
+[constant] kAudioCodecOutputPrecedenceSampleRate = 2
+[constant] kAudioCodecPrimeMethod_None = 2
+[constant] kAudioCodecPrimeMethod_Normal = 1
+[constant] kAudioCodecPrimeMethod_Pre = 0
+[constant] kAudioCodecProduceOutputBufferListSelect = 10
+[constant] kAudioCodecProduceOutputDataSelect = 7
+[constant] kAudioCodecProduceOutputPacketAtEOF = 5
+[constant] kAudioCodecProduceOutputPacketFailure = 1
+[constant] kAudioCodecProduceOutputPacketNeedsMoreInputData = 4
+[constant] kAudioCodecProduceOutputPacketSuccess = 2
+[constant] kAudioCodecProduceOutputPacketSuccessHasMore = 3
+[constant] kAudioCodecPropertyAdjustLocalQuality = 1584488812
+[constant] kAudioCodecPropertyApplicableBitRateRange = 1651668065
+[constant] kAudioCodecPropertyApplicableInputSampleRates = 1769173601
+[constant] kAudioCodecPropertyApplicableOutputSampleRates = 1869836897
+[constant] kAudioCodecPropertyAvailableBitRateRange = 1633841780
+[constant] kAudioCodecPropertyAvailableBitRates = 1651668003
+[constant] kAudioCodecPropertyAvailableInputChannelLayoutTags = 1634296684
+[constant] kAudioCodecPropertyAvailableInputChannelLayouts = 1634296684
+[constant] kAudioCodecPropertyAvailableInputSampleRates = 1634300786
+[constant] kAudioCodecPropertyAvailableNumberChannels = 1668116067
+[constant] kAudioCodecPropertyAvailableOutputChannelLayoutTags = 1634689900
+[constant] kAudioCodecPropertyAvailableOutputChannelLayouts = 1634689900
+[constant] kAudioCodecPropertyAvailableOutputSampleRates = 1634694002
+[constant] kAudioCodecPropertyBitRateControlMode = 1633903206
+[constant] kAudioCodecPropertyCurrentInputChannelLayout = 1768123424
+[constant] kAudioCodecPropertyCurrentInputFormat = 1768320372
+[constant] kAudioCodecPropertyCurrentInputSampleRate = 1667855218
+[constant] kAudioCodecPropertyCurrentOutputChannelLayout = 1868786720
+[constant] kAudioCodecPropertyCurrentOutputFormat = 1868983668
+[constant] kAudioCodecPropertyCurrentOutputSampleRate = 1668248434
+[constant] kAudioCodecPropertyCurrentTargetBitRate = 1651663220
+[constant] kAudioCodecPropertyDelayMode = 1684893540
+[constant] kAudioCodecPropertyDoesSampleRateConversion = 1819112035
+[constant] kAudioCodecPropertyDynamicRangeControlMode = 1835299427
+[constant] kAudioCodecPropertyFormatCFString = 1818652530
+[constant] kAudioCodecPropertyFormatInfo = 1633904233
+[constant] kAudioCodecPropertyFormatList = 1633904236
+[constant] kAudioCodecPropertyHasVariablePacketByteSizes = 1987078975
+[constant] kAudioCodecPropertyInputBufferSize = 1952609638
+[constant] kAudioCodecPropertyInputChannelLayout = 1768123424
+[constant] kAudioCodecPropertyInputFormatsForOutputFormat = 1768305775
+[constant] kAudioCodecPropertyIsInitialized = 1768843636
+[constant] kAudioCodecPropertyMagicCookie = 1802857321
+[constant] kAudioCodecPropertyManufacturerCFString = 1819107691
+[constant] kAudioCodecPropertyMaximumPacketByteSize = 1885432674
+[constant] kAudioCodecPropertyMinimumDelayMode = 1835296108
+[constant] kAudioCodecPropertyMinimumNumberInputPackets = 1835952496
+[constant] kAudioCodecPropertyMinimumNumberOutputPackets = 1835954032
+[constant] kAudioCodecPropertyNameCFString = 1819173229
+[constant] kAudioCodecPropertyOutputChannelLayout = 1868786720
+[constant] kAudioCodecPropertyOutputFormatsForInputFormat = 1868969065
+[constant] kAudioCodecPropertyPacketFrameSize = 1885432678
+[constant] kAudioCodecPropertyPacketSizeLimitForVBR = 1885432684
+[constant] kAudioCodecPropertyPaddedZeros = 1885430832
+[constant] kAudioCodecPropertyPrimeInfo = 1886546285
+[constant] kAudioCodecPropertyPrimeMethod = 1886547309
+[constant] kAudioCodecPropertyProgramTargetLevel = 1886418028
+[constant] kAudioCodecPropertyProgramTargetLevelConstant = 1886678115
+[constant] kAudioCodecPropertyQualitySetting = 1936876401
+[constant] kAudioCodecPropertyRecommendedBitRateRange = 1651668082
+[constant] kAudioCodecPropertyRequiresPacketDescription = 1885432676
+[constant] kAudioCodecPropertySettings = 1633907488
+[constant] kAudioCodecPropertySoundQualityForVBR = 1986163313
+[constant] kAudioCodecPropertySupportedInputFormats = 1768320291
+[constant] kAudioCodecPropertySupportedOutputFormats = 1868983587
+[constant] kAudioCodecPropertyUsedInputBufferSize = 1969386854
+[constant] kAudioCodecPropertyZeroFramesPadded = 1885430832
+[constant] kAudioCodecQuality_High = 96
+[constant] kAudioCodecQuality_Low = 32
+[constant] kAudioCodecQuality_Max = 127
+[constant] kAudioCodecQuality_Medium = 64
+[constant] kAudioCodecQuality_Min = 0
+[constant] kAudioCodecResetSelect = 8
+[constant] kAudioCodecSetPropertySelect = 3
+[constant] kAudioCodecStateError = 561214580
+[constant] kAudioCodecUninitializeSelect = 5
+[constant] kAudioCodecUnknownPropertyError = 2003332927
+[constant] kAudioCodecUnspecifiedError = 2003329396
+[constant] kAudioCodecUnsupportedFormatError = 560226676
+[constant] kAudioCodecUseRecommendedSampleRate = 1970434930
+[constant] kAudioComponentErr_InstanceInvalidated = -66749
+[constant] kAudioComponentFlag_CanLoadInProcess = 16
+[constant] kAudioComponentFlag_IsV3AudioUnit = 4
+[constant] kAudioComponentFlag_RequiresAsyncInstantiation = 8
+[constant] kAudioComponentFlag_SandboxSafe = 2
+[constant] kAudioComponentFlag_Unsearchable = 1
+[constant] kAudioComponentInstantiation_LoadInProcess = 2
+[constant] kAudioComponentInstantiation_LoadOutOfProcess = 1
+[constant] kAudioComponentValidationResult_Failed = 0
+[constant] kAudioComponentValidationResult_Passed = 0
+[constant] kAudioComponentValidationResult_TimedOut = 0
+[constant] kAudioComponentValidationResult_UnauthorizedError_Init = 0
+[constant] kAudioComponentValidationResult_UnauthorizedError_Open = 0
+[constant] kAudioComponentValidationResult_Unknown = 0
 [constant] kAudioControlClassID = 1633907820
 [constant] kAudioControlPropertyElement = 1667591277
 [constant] kAudioControlPropertyScope = 1668506480
@@ -649,6 +1305,7 @@
 [constant] kAudioConverterSampleRateConverterQuality = 1936876401
 [constant] kAudioDataDestinationControlClassID = 1684370292
 [constant] kAudioDataSourceControlClassID = 1685287523
+[constant] kAudioDecoderComponentType = 1633969507
 [constant] kAudioDeviceClassID = 1633969526
 [constant] kAudioDevicePermissionsError = 560492391
 [constant] kAudioDeviceProcessorOverload = 1870030194
@@ -781,6 +1438,7 @@
 [constant] kAudioDeviceTransportTypeVirtual = 1986622068
 [constant] kAudioDeviceUnknown = 0
 [constant] kAudioDeviceUnsupportedFormatError = 560226676
+[constant] kAudioEncoderComponentType = 1634037347
 [constant] kAudioEndPointClassID = 1701733488
 [constant] kAudioEndPointDeviceClassID = 1701078390
 [constant] kAudioEndPointDevicePropertyComposition = 1633906541
@@ -1115,6 +1773,22 @@
 [constant] kAudioObjectPropertySerialNumber = 1936618861
 [constant] kAudioObjectSystemObject = 1
 [constant] kAudioObjectUnknown = 0
+[constant] kAudioOfflineUnitProperty_InputSize = 3020
+[constant] kAudioOfflineUnitProperty_OutputSize = 3021
+[constant] kAudioOfflineUnitRenderAction_Complete = 128
+[constant] kAudioOfflineUnitRenderAction_Preflight = 32
+[constant] kAudioOfflineUnitRenderAction_Render = 64
+[constant] kAudioOutputUnitProperty_ChannelMap = 2002
+[constant] kAudioOutputUnitProperty_CurrentDevice = 2000
+[constant] kAudioOutputUnitProperty_EnableIO = 2003
+[constant] kAudioOutputUnitProperty_HasIO = 2006
+[constant] kAudioOutputUnitProperty_IsRunning = 2001
+[constant] kAudioOutputUnitProperty_SetInputCallback = 2005
+[constant] kAudioOutputUnitProperty_StartTime = 2004
+[constant] kAudioOutputUnitProperty_StartTimestampsAtZero = 2007
+[constant] kAudioOutputUnitRange = 512
+[constant] kAudioOutputUnitStartSelect = 513
+[constant] kAudioOutputUnitStopSelect = 514
 [constant] kAudioPhantomPowerControlClassID = 1885888878
 [constant] kAudioPhaseInvertControlClassID = 1885893481
 [constant] kAudioPlugInClassID = 1634757735
@@ -1199,6 +1873,10 @@
 [constant] kAudioServicesSystemSoundExceededMaximumDurationError = -1502
 [constant] kAudioServicesSystemSoundUnspecifiedError = -1500
 [constant] kAudioServicesUnsupportedPropertyError = 1886681407
+[constant] kAudioSettingsFlags_ExpertParameter = 1
+[constant] kAudioSettingsFlags_InvisibleParameter = 2
+[constant] kAudioSettingsFlags_MetaParameter = 4
+[constant] kAudioSettingsFlags_UserInterfaceParameter = 8
 [constant] kAudioSliderControlClassID = 1936483442
 [constant] kAudioSliderControlPropertyRange = 1935962738
 [constant] kAudioSliderControlPropertyValue = 1935962742
@@ -1258,6 +1936,279 @@
 [constant] kAudioTransportManagerPropertyEndPointList = 1701733411
 [constant] kAudioTransportManagerPropertyTranslateUIDToEndPoint = 1969841253
 [constant] kAudioTransportManagerPropertyTransportType = 1953653102
+[constant] kAudioUnitAddPropertyListenerSelect = 10
+[constant] kAudioUnitAddRenderNotifySelect = 15
+[constant] kAudioUnitClumpID_System = 0
+[constant] kAudioUnitComplexRenderSelect = 19
+[constant] kAudioUnitErr_CannotDoInCurrentContext = -10863
+[constant] kAudioUnitErr_FailedInitialization = -10875
+[constant] kAudioUnitErr_FileNotSpecified = -10869
+[constant] kAudioUnitErr_FormatNotSupported = -10868
+[constant] kAudioUnitErr_IllegalInstrument = -10873
+[constant] kAudioUnitErr_Initialized = -10849
+[constant] kAudioUnitErr_InstrumentTypeNotFound = -10872
+[constant] kAudioUnitErr_InvalidElement = -10877
+[constant] kAudioUnitErr_InvalidFile = -10871
+[constant] kAudioUnitErr_InvalidOfflineRender = -10848
+[constant] kAudioUnitErr_InvalidParameter = -10878
+[constant] kAudioUnitErr_InvalidProperty = -10879
+[constant] kAudioUnitErr_InvalidPropertyValue = -10851
+[constant] kAudioUnitErr_InvalidScope = -10866
+[constant] kAudioUnitErr_NoConnection = -10876
+[constant] kAudioUnitErr_PropertyNotInUse = -10850
+[constant] kAudioUnitErr_PropertyNotWritable = -10865
+[constant] kAudioUnitErr_RenderTimeout = -66745
+[constant] kAudioUnitErr_TooManyFramesToProcess = -10874
+[constant] kAudioUnitErr_Unauthorized = -10847
+[constant] kAudioUnitErr_Uninitialized = -10867
+[constant] kAudioUnitErr_UnknownFileType = -10870
+[constant] kAudioUnitGetParameterSelect = 6
+[constant] kAudioUnitGetPropertyInfoSelect = 3
+[constant] kAudioUnitGetPropertySelect = 4
+[constant] kAudioUnitInitializeSelect = 1
+[constant] kAudioUnitManufacturer_Apple = 1634758764
+[constant] kAudioUnitMigrateProperty_FromPlugin = 4000
+[constant] kAudioUnitMigrateProperty_OldAutomation = 4001
+[constant] kAudioUnitOfflineProperty_InputSize = 3020
+[constant] kAudioUnitOfflineProperty_OutputSize = 3021
+[constant] kAudioUnitOfflineProperty_PreflightName = 3024
+[constant] kAudioUnitOfflineProperty_PreflightRequirements = 3023
+[constant] kAudioUnitOfflineProperty_StartOffset = 3022
+[constant] kAudioUnitParameterFlag_CFNameRelease = 16
+[constant] kAudioUnitParameterFlag_CanRamp = 33554432
+[constant] kAudioUnitParameterFlag_DisplayCubeRoot = 262144
+[constant] kAudioUnitParameterFlag_DisplayCubed = 196608
+[constant] kAudioUnitParameterFlag_DisplayExponential = 327680
+[constant] kAudioUnitParameterFlag_DisplayLogarithmic = 4194304
+[constant] kAudioUnitParameterFlag_DisplayMask = 4653056
+[constant] kAudioUnitParameterFlag_DisplaySquareRoot = 65536
+[constant] kAudioUnitParameterFlag_DisplaySquared = 131072
+[constant] kAudioUnitParameterFlag_ExpertMode = 67108864
+[constant] kAudioUnitParameterFlag_Global = 1
+[constant] kAudioUnitParameterFlag_Group = 8
+[constant] kAudioUnitParameterFlag_HasCFNameString = 134217728
+[constant] kAudioUnitParameterFlag_HasClump = 1048576
+[constant] kAudioUnitParameterFlag_HasName = 2097152
+[constant] kAudioUnitParameterFlag_Input = 2
+[constant] kAudioUnitParameterFlag_IsElementMeta = 536870912
+[constant] kAudioUnitParameterFlag_IsGlobalMeta = 268435456
+[constant] kAudioUnitParameterFlag_IsHighResolution = 8388608
+[constant] kAudioUnitParameterFlag_IsReadable = 1073741824
+[constant] kAudioUnitParameterFlag_IsWritable = 2147483648
+[constant] kAudioUnitParameterFlag_MeterReadOnly = 32768
+[constant] kAudioUnitParameterFlag_NonRealTime = 16777216
+[constant] kAudioUnitParameterFlag_OmitFromPresets = 8192
+[constant] kAudioUnitParameterFlag_Output = 4
+[constant] kAudioUnitParameterFlag_PlotHistory = 16384
+[constant] kAudioUnitParameterFlag_ValuesHaveStrings = 2097152
+[constant] kAudioUnitParameterName_Full = -1
+[constant] kAudioUnitParameterUnit_AbsoluteCents = 20
+[constant] kAudioUnitParameterUnit_BPM = 22
+[constant] kAudioUnitParameterUnit_Beats = 23
+[constant] kAudioUnitParameterUnit_Boolean = 2
+[constant] kAudioUnitParameterUnit_Cents = 9
+[constant] kAudioUnitParameterUnit_CustomUnit = 26
+[constant] kAudioUnitParameterUnit_Decibels = 13
+[constant] kAudioUnitParameterUnit_Degrees = 15
+[constant] kAudioUnitParameterUnit_EqualPowerCrossfade = 16
+[constant] kAudioUnitParameterUnit_Generic = 0
+[constant] kAudioUnitParameterUnit_Hertz = 8
+[constant] kAudioUnitParameterUnit_Indexed = 1
+[constant] kAudioUnitParameterUnit_LinearGain = 14
+[constant] kAudioUnitParameterUnit_MIDIController = 12
+[constant] kAudioUnitParameterUnit_MIDINoteNumber = 11
+[constant] kAudioUnitParameterUnit_Meters = 19
+[constant] kAudioUnitParameterUnit_Milliseconds = 24
+[constant] kAudioUnitParameterUnit_MixerFaderCurve1 = 17
+[constant] kAudioUnitParameterUnit_Octaves = 21
+[constant] kAudioUnitParameterUnit_Pan = 18
+[constant] kAudioUnitParameterUnit_Percent = 3
+[constant] kAudioUnitParameterUnit_Phase = 6
+[constant] kAudioUnitParameterUnit_Rate = 7
+[constant] kAudioUnitParameterUnit_Ratio = 25
+[constant] kAudioUnitParameterUnit_RelativeSemiTones = 10
+[constant] kAudioUnitParameterUnit_SampleFrames = 5
+[constant] kAudioUnitParameterUnit_Seconds = 4
+[constant] kAudioUnitProcessMultipleSelect = 21
+[constant] kAudioUnitProcessSelect = 20
+[constant] kAudioUnitProperty_3DMixerAttenuationCurve = 3013
+[constant] kAudioUnitProperty_3DMixerDistanceAtten = 3004
+[constant] kAudioUnitProperty_3DMixerDistanceParams = 3010
+[constant] kAudioUnitProperty_3DMixerRenderingFlags = 3003
+[constant] kAudioUnitProperty_AUHostIdentifier = 46
+[constant] kAudioUnitProperty_AddParameterMIDIMapping = 42
+[constant] kAudioUnitProperty_AllParameterMIDIMappings = 41
+[constant] kAudioUnitProperty_AudioChannelLayout = 19
+[constant] kAudioUnitProperty_BusCount = 11
+[constant] kAudioUnitProperty_BypassEffect = 21
+[constant] kAudioUnitProperty_CPULoad = 6
+[constant] kAudioUnitProperty_ClassInfo = 0
+[constant] kAudioUnitProperty_ClassInfoFromDocument = 50
+[constant] kAudioUnitProperty_CocoaUI = 31
+[constant] kAudioUnitProperty_ContextName = 25
+[constant] kAudioUnitProperty_CurrentPlayTime = 3302
+[constant] kAudioUnitProperty_CurrentPreset = 28
+[constant] kAudioUnitProperty_DeferredRendererExtraLatency = 3321
+[constant] kAudioUnitProperty_DeferredRendererPullSize = 3320
+[constant] kAudioUnitProperty_DeferredRendererWaitFrames = 3322
+[constant] kAudioUnitProperty_DependentParameters = 45
+[constant] kAudioUnitProperty_DistanceAttenuationData = 3600
+[constant] kAudioUnitProperty_DopplerShift = 3002
+[constant] kAudioUnitProperty_ElementCount = 11
+[constant] kAudioUnitProperty_ElementName = 30
+[constant] kAudioUnitProperty_FactoryPresets = 24
+[constant] kAudioUnitProperty_FastDispatch = 5
+[constant] kAudioUnitProperty_FrequencyResponse = 52
+[constant] kAudioUnitProperty_GetUIComponentList = 18
+[constant] kAudioUnitProperty_HostCallbacks = 27
+[constant] kAudioUnitProperty_HotMapParameterMIDIMapping = 44
+[constant] kAudioUnitProperty_IconLocation = 39
+[constant] kAudioUnitProperty_InPlaceProcessing = 29
+[constant] kAudioUnitProperty_InputAnchorTimeStamp = 3016
+[constant] kAudioUnitProperty_InputSamplesInOutput = 49
+[constant] kAudioUnitProperty_LastRenderError = 22
+[constant] kAudioUnitProperty_Latency = 12
+[constant] kAudioUnitProperty_MIDIControlMapping = 17
+[constant] kAudioUnitProperty_MIDIOutputCallback = 48
+[constant] kAudioUnitProperty_MIDIOutputCallbackInfo = 47
+[constant] kAudioUnitProperty_MakeConnection = 1
+[constant] kAudioUnitProperty_MatrixDimensions = 3009
+[constant] kAudioUnitProperty_MatrixLevels = 3006
+[constant] kAudioUnitProperty_MaximumFramesPerSlice = 14
+[constant] kAudioUnitProperty_MeterClipping = 3011
+[constant] kAudioUnitProperty_MeteringMode = 3007
+[constant] kAudioUnitProperty_NickName = 54
+[constant] kAudioUnitProperty_OfflineRender = 37
+[constant] kAudioUnitProperty_PannerMode = 3008
+[constant] kAudioUnitProperty_ParameterClumpName = 35
+[constant] kAudioUnitProperty_ParameterHistoryInfo = 53
+[constant] kAudioUnitProperty_ParameterIDName = 34
+[constant] kAudioUnitProperty_ParameterInfo = 4
+[constant] kAudioUnitProperty_ParameterList = 3
+[constant] kAudioUnitProperty_ParameterStringFromValue = 33
+[constant] kAudioUnitProperty_ParameterValueFromString = 38
+[constant] kAudioUnitProperty_ParameterValueName = 33
+[constant] kAudioUnitProperty_ParameterValueStrings = 16
+[constant] kAudioUnitProperty_ParametersForOverview = 57
+[constant] kAudioUnitProperty_PresentPreset = 36
+[constant] kAudioUnitProperty_PresentationLatency = 40
+[constant] kAudioUnitProperty_RemoveParameterMIDIMapping = 43
+[constant] kAudioUnitProperty_RenderQuality = 26
+[constant] kAudioUnitProperty_RequestViewController = 56
+[constant] kAudioUnitProperty_ReverbPreset = 3012
+[constant] kAudioUnitProperty_ReverbRoomType = 10
+[constant] kAudioUnitProperty_SRCAlgorithm = 9
+[constant] kAudioUnitProperty_SampleRate = 2
+[constant] kAudioUnitProperty_SampleRateConverterComplexity = 3014
+[constant] kAudioUnitProperty_ScheduleAudioSlice = 3300
+[constant] kAudioUnitProperty_ScheduleStartTimeStamp = 3301
+[constant] kAudioUnitProperty_ScheduledFileBufferSizeFrames = 3313
+[constant] kAudioUnitProperty_ScheduledFileIDs = 3310
+[constant] kAudioUnitProperty_ScheduledFileNumberBuffers = 3314
+[constant] kAudioUnitProperty_ScheduledFilePrime = 3312
+[constant] kAudioUnitProperty_ScheduledFileRegion = 3311
+[constant] kAudioUnitProperty_SetExternalBuffer = 15
+[constant] kAudioUnitProperty_SetRenderCallback = 23
+[constant] kAudioUnitProperty_ShouldAllocateBuffer = 51
+[constant] kAudioUnitProperty_SpatialMixerAttenuationCurve = 3013
+[constant] kAudioUnitProperty_SpatialMixerDistanceParams = 3010
+[constant] kAudioUnitProperty_SpatialMixerRenderingFlags = 3003
+[constant] kAudioUnitProperty_SpatializationAlgorithm = 3000
+[constant] kAudioUnitProperty_SpeakerConfiguration = 3001
+[constant] kAudioUnitProperty_StreamFormat = 8
+[constant] kAudioUnitProperty_SupportedChannelLayoutTags = 32
+[constant] kAudioUnitProperty_SupportedNumChannels = 13
+[constant] kAudioUnitProperty_SupportsMPE = 58
+[constant] kAudioUnitProperty_TailTime = 20
+[constant] kAudioUnitProperty_UsesInternalReverb = 1005
+[constant] kAudioUnitRange = 0
+[constant] kAudioUnitRemovePropertyListenerSelect = 11
+[constant] kAudioUnitRemovePropertyListenerWithUserDataSelect = 18
+[constant] kAudioUnitRemoveRenderNotifySelect = 16
+[constant] kAudioUnitRenderAction_DoNotCheckRenderArgs = 512
+[constant] kAudioUnitRenderAction_OutputIsSilence = 16
+[constant] kAudioUnitRenderAction_PostRender = 8
+[constant] kAudioUnitRenderAction_PostRenderError = 256
+[constant] kAudioUnitRenderAction_PreRender = 4
+[constant] kAudioUnitRenderSelect = 14
+[constant] kAudioUnitResetSelect = 9
+[constant] kAudioUnitSRCAlgorithm_MediumQuality = 1668510307
+[constant] kAudioUnitSRCAlgorithm_Polyphase = 1886350457
+[constant] kAudioUnitSampleRateConverterComplexity_Linear = 1818848869
+[constant] kAudioUnitSampleRateConverterComplexity_Mastering = 1650553971
+[constant] kAudioUnitSampleRateConverterComplexity_Normal = 1852797549
+[constant] kAudioUnitScheduleParametersSelect = 17
+[constant] kAudioUnitScope_Global = 0
+[constant] kAudioUnitScope_Group = 3
+[constant] kAudioUnitScope_Input = 1
+[constant] kAudioUnitScope_Layer = 6
+[constant] kAudioUnitScope_LayerItem = 7
+[constant] kAudioUnitScope_Note = 5
+[constant] kAudioUnitScope_Output = 2
+[constant] kAudioUnitScope_Part = 4
+[constant] kAudioUnitSetParameterSelect = 7
+[constant] kAudioUnitSetPropertySelect = 5
+[constant] kAudioUnitSubType_3DMixer = 862219640
+[constant] kAudioUnitSubType_AUConverter = 1668247158
+[constant] kAudioUnitSubType_AUFilter = 1718185076
+[constant] kAudioUnitSubType_AUiPodTimeOther = 1768977519
+[constant] kAudioUnitSubType_AudioFilePlayer = 1634103404
+[constant] kAudioUnitSubType_BandPassFilter = 1651532147
+[constant] kAudioUnitSubType_DLSSynth = 1684828960
+[constant] kAudioUnitSubType_DefaultOutput = 1684366880
+[constant] kAudioUnitSubType_DeferredRenderer = 1684366962
+[constant] kAudioUnitSubType_Delay = 1684368505
+[constant] kAudioUnitSubType_Distortion = 1684632436
+[constant] kAudioUnitSubType_DynamicsProcessor = 1684237680
+[constant] kAudioUnitSubType_GenericOutput = 1734700658
+[constant] kAudioUnitSubType_GraphicEQ = 1735550321
+[constant] kAudioUnitSubType_HALOutput = 1634230636
+[constant] kAudioUnitSubType_HRTFPanner = 1752331366
+[constant] kAudioUnitSubType_HighPassFilter = 1752195443
+[constant] kAudioUnitSubType_HighShelfFilter = 1752393830
+[constant] kAudioUnitSubType_LowPassFilter = 1819304307
+[constant] kAudioUnitSubType_LowShelfFilter = 1819502694
+[constant] kAudioUnitSubType_MIDISynth = 1836284270
+[constant] kAudioUnitSubType_MatrixMixer = 1836608888
+[constant] kAudioUnitSubType_MatrixReverb = 1836213622
+[constant] kAudioUnitSubType_Merger = 1835364967
+[constant] kAudioUnitSubType_MultiBandCompressor = 1835232624
+[constant] kAudioUnitSubType_MultiChannelMixer = 1835232632
+[constant] kAudioUnitSubType_MultiSplitter = 1836281964
+[constant] kAudioUnitSubType_NBandEQ = 1851942257
+[constant] kAudioUnitSubType_NetReceive = 1852990326
+[constant] kAudioUnitSubType_NetSend = 1853058660
+[constant] kAudioUnitSubType_NewTimePitch = 1853191280
+[constant] kAudioUnitSubType_ParametricEQ = 1886217585
+[constant] kAudioUnitSubType_PeakLimiter = 1819112562
+[constant] kAudioUnitSubType_Pitch = 1953329268
+[constant] kAudioUnitSubType_RogerBeep = 1919903602
+[constant] kAudioUnitSubType_RoundTripAAC = 1918984547
+[constant] kAudioUnitSubType_SampleDelay = 1935961209
+[constant] kAudioUnitSubType_Sampler = 1935764848
+[constant] kAudioUnitSubType_ScheduledSoundPlayer = 1936945260
+[constant] kAudioUnitSubType_SoundFieldPanner = 1634558569
+[constant] kAudioUnitSubType_SpatialMixer = 862217581
+[constant] kAudioUnitSubType_SphericalHeadPanner = 1936746610
+[constant] kAudioUnitSubType_Splitter = 1936747636
+[constant] kAudioUnitSubType_StereoMixer = 1936554098
+[constant] kAudioUnitSubType_SystemOutput = 1937339168
+[constant] kAudioUnitSubType_TimePitch = 1953329268
+[constant] kAudioUnitSubType_Varispeed = 1986097769
+[constant] kAudioUnitSubType_VectorPanner = 1986158963
+[constant] kAudioUnitSubType_VoiceProcessingIO = 1987078511
+[constant] kAudioUnitType_Effect = 1635083896
+[constant] kAudioUnitType_FormatConverter = 1635083875
+[constant] kAudioUnitType_Generator = 1635084142
+[constant] kAudioUnitType_MIDIProcessor = 1635085673
+[constant] kAudioUnitType_Mixer = 1635085688
+[constant] kAudioUnitType_MusicDevice = 1635085685
+[constant] kAudioUnitType_MusicEffect = 1635085670
+[constant] kAudioUnitType_OfflineEffect = 1635086188
+[constant] kAudioUnitType_Output = 1635086197
+[constant] kAudioUnitType_Panner = 1635086446
+[constant] kAudioUnitUninitializeSelect = 2
+[constant] kAudioUnityCodecComponentType = 1633903715
 [constant] kAudioVolumeControlClassID = 1986817381
 [constant] kAudio_BadFilePathError = 561017960
 [constant] kAudio_FileNotFoundError = -43
@@ -1266,12 +2217,47 @@
 [constant] kAudio_ParamError = -50
 [constant] kAudio_TooManyFilesOpenError = -42
 [constant] kAudio_UnimplementedError = -4
+[constant] kBandpassParam_Bandwidth = 1
+[constant] kBandpassParam_CenterFrequency = 0
 [constant] kBytePacketTranslationFlag_IsEstimate = 1
 [constant] kConverterPrimeMethod_None = 2
 [constant] kConverterPrimeMethod_Normal = 1
 [constant] kConverterPrimeMethod_Pre = 0
+[constant] kDelayParam_DelayTime = 1
+[constant] kDelayParam_Feedback = 2
+[constant] kDelayParam_LopassCutoff = 3
+[constant] kDelayParam_WetDryMix = 0
+[constant] kDistortionParam_CubicTerm = 8
+[constant] kDistortionParam_Decay = 1
+[constant] kDistortionParam_Decimation = 3
+[constant] kDistortionParam_DecimationMix = 5
+[constant] kDistortionParam_Delay = 0
+[constant] kDistortionParam_DelayMix = 2
+[constant] kDistortionParam_FinalMix = 15
+[constant] kDistortionParam_LinearTerm = 6
+[constant] kDistortionParam_PolynomialMix = 9
+[constant] kDistortionParam_RingModBalance = 12
+[constant] kDistortionParam_RingModFreq1 = 10
+[constant] kDistortionParam_RingModFreq2 = 11
+[constant] kDistortionParam_RingModMix = 13
+[constant] kDistortionParam_Rounding = 4
+[constant] kDistortionParam_SoftClipGain = 14
+[constant] kDistortionParam_SquaredTerm = 7
 [constant] kDitherAlgorithm_NoiseShaping = 2
 [constant] kDitherAlgorithm_TPDF = 1
+[constant] kDynamicRangeControlMode_Heavy = 2
+[constant] kDynamicRangeControlMode_Light = 1
+[constant] kDynamicRangeControlMode_None = 0
+[constant] kDynamicsProcessorParam_AttackTime = 4
+[constant] kDynamicsProcessorParam_CompressionAmount = 1000
+[constant] kDynamicsProcessorParam_ExpansionRatio = 2
+[constant] kDynamicsProcessorParam_ExpansionThreshold = 3
+[constant] kDynamicsProcessorParam_HeadRoom = 1
+[constant] kDynamicsProcessorParam_InputAmplitude = 2000
+[constant] kDynamicsProcessorParam_MasterGain = 6
+[constant] kDynamicsProcessorParam_OutputAmplitude = 3000
+[constant] kDynamicsProcessorParam_ReleaseTime = 5
+[constant] kDynamicsProcessorParam_Threshold = 0
 [constant] kExtAudioFileError_AsyncWriteBufferOverflow = -66570
 [constant] kExtAudioFileError_AsyncWriteTooLarge = -66569
 [constant] kExtAudioFileError_InvalidChannelMap = -66564
@@ -1296,6 +2282,23 @@
 [constant] kExtAudioFileProperty_IOBuffer = 1768907366
 [constant] kExtAudioFileProperty_IOBufferSizeBytes = 1768907379
 [constant] kExtAudioFileProperty_PacketTable = 2020635753
+[constant] kGraphicEQParam_NumberOfBands = 10000
+[constant] kHALOutputParam_Volume = 14
+[constant] kHighShelfParam_CutOffFrequency = 0
+[constant] kHighShelfParam_Gain = 1
+[constant] kHintAdvanced = 1
+[constant] kHintBasic = 0
+[constant] kHintHidden = 2
+[constant] kHipassParam_CutoffFrequency = 0
+[constant] kHipassParam_Resonance = 1
+[constant] kInstrumentType_AUPreset = 2
+[constant] kInstrumentType_Audiofile = 3
+[constant] kInstrumentType_DLSPreset = 1
+[constant] kInstrumentType_EXS24 = 4
+[constant] kInstrumentType_SF2Preset = 1
+[constant] kLimiterParam_AttackTime = 0
+[constant] kLimiterParam_DecayTime = 1
+[constant] kLimiterParam_PreGain = 2
 [constant] kLinearPCMFormatFlagIsAlignedHigh = 16
 [constant] kLinearPCMFormatFlagIsBigEndian = 2
 [constant] kLinearPCMFormatFlagIsFloat = 1
@@ -1306,6 +2309,8 @@
 [constant] kLinearPCMFormatFlagsAreAllClear = 2147483648
 [constant] kLinearPCMFormatFlagsSampleFractionMask = 8064
 [constant] kLinearPCMFormatFlagsSampleFractionShift = 7
+[constant] kLowPassParam_CutoffFrequency = 0
+[constant] kLowPassParam_Resonance = 1
 [constant] kMPEG4Object_AAC_LC = 2
 [constant] kMPEG4Object_AAC_LTP = 4
 [constant] kMPEG4Object_AAC_Main = 1
@@ -1315,8 +2320,188 @@
 [constant] kMPEG4Object_CELP = 8
 [constant] kMPEG4Object_HVXC = 9
 [constant] kMPEG4Object_TwinVQ = 7
+[constant] kMatrixMixerParam_Enable = 1
+[constant] kMatrixMixerParam_PostAveragePower = 3000
+[constant] kMatrixMixerParam_PostAveragePowerLinear = 7000
+[constant] kMatrixMixerParam_PostPeakHoldLevel = 4000
+[constant] kMatrixMixerParam_PostPeakHoldLevelLinear = 8000
+[constant] kMatrixMixerParam_PreAveragePower = 1000
+[constant] kMatrixMixerParam_PreAveragePowerLinear = 5000
+[constant] kMatrixMixerParam_PrePeakHoldLevel = 2000
+[constant] kMatrixMixerParam_PrePeakHoldLevelLinear = 6000
+[constant] kMatrixMixerParam_Volume = 0
+[constant] kMultiChannelMixerParam_Enable = 1
+[constant] kMultiChannelMixerParam_Pan = 2
+[constant] kMultiChannelMixerParam_PostAveragePower = 3000
+[constant] kMultiChannelMixerParam_PostPeakHoldLevel = 4000
+[constant] kMultiChannelMixerParam_PreAveragePower = 1000
+[constant] kMultiChannelMixerParam_PrePeakHoldLevel = 2000
+[constant] kMultiChannelMixerParam_Volume = 0
+[constant] kMultibandCompressorParam_AttackTime = 13
+[constant] kMultibandCompressorParam_CompressionAmount1 = 1000
+[constant] kMultibandCompressorParam_CompressionAmount2 = 2000
+[constant] kMultibandCompressorParam_CompressionAmount3 = 3000
+[constant] kMultibandCompressorParam_CompressionAmount4 = 4000
+[constant] kMultibandCompressorParam_Crossover1 = 2
+[constant] kMultibandCompressorParam_Crossover2 = 3
+[constant] kMultibandCompressorParam_Crossover3 = 4
+[constant] kMultibandCompressorParam_EQ1 = 15
+[constant] kMultibandCompressorParam_EQ2 = 16
+[constant] kMultibandCompressorParam_EQ3 = 17
+[constant] kMultibandCompressorParam_EQ4 = 18
+[constant] kMultibandCompressorParam_Headroom1 = 9
+[constant] kMultibandCompressorParam_Headroom2 = 10
+[constant] kMultibandCompressorParam_Headroom3 = 11
+[constant] kMultibandCompressorParam_Headroom4 = 12
+[constant] kMultibandCompressorParam_InputAmplitude1 = 5000
+[constant] kMultibandCompressorParam_InputAmplitude2 = 6000
+[constant] kMultibandCompressorParam_InputAmplitude3 = 7000
+[constant] kMultibandCompressorParam_InputAmplitude4 = 8000
+[constant] kMultibandCompressorParam_OutputAmplitude1 = 9000
+[constant] kMultibandCompressorParam_OutputAmplitude2 = 10000
+[constant] kMultibandCompressorParam_OutputAmplitude3 = 11000
+[constant] kMultibandCompressorParam_OutputAmplitude4 = 12000
+[constant] kMultibandCompressorParam_Postgain = 1
+[constant] kMultibandCompressorParam_Pregain = 0
+[constant] kMultibandCompressorParam_ReleaseTime = 14
+[constant] kMultibandCompressorParam_Threshold1 = 5
+[constant] kMultibandCompressorParam_Threshold2 = 6
+[constant] kMultibandCompressorParam_Threshold3 = 7
+[constant] kMultibandCompressorParam_Threshold4 = 8
+[constant] kMultibandFilter_Bandwidth1 = 5
+[constant] kMultibandFilter_Bandwidth2 = 8
+[constant] kMultibandFilter_Bandwidth3 = 11
+[constant] kMultibandFilter_CenterFreq1 = 3
+[constant] kMultibandFilter_CenterFreq2 = 6
+[constant] kMultibandFilter_CenterFreq3 = 9
+[constant] kMultibandFilter_CenterGain1 = 4
+[constant] kMultibandFilter_CenterGain2 = 7
+[constant] kMultibandFilter_CenterGain3 = 10
+[constant] kMultibandFilter_HighFilterType = 12
+[constant] kMultibandFilter_HighFrequency = 13
+[constant] kMultibandFilter_HighGain = 14
+[constant] kMultibandFilter_LowFilterType = 0
+[constant] kMultibandFilter_LowFrequency = 1
+[constant] kMultibandFilter_LowGain = 2
+[constant] kMusicDeviceMIDIEventSelect = 257
+[constant] kMusicDeviceParam_ReverbVolume = 2
+[constant] kMusicDeviceParam_Tuning = 0
+[constant] kMusicDeviceParam_Volume = 1
+[constant] kMusicDevicePrepareInstrumentSelect = 259
+[constant] kMusicDeviceProperty_BankName = 1007
+[constant] kMusicDeviceProperty_DualSchedulingMode = 1013
+[constant] kMusicDeviceProperty_GroupOutputBus = 1002
+[constant] kMusicDeviceProperty_InstrumentCount = 1000
+[constant] kMusicDeviceProperty_InstrumentName = 1001
+[constant] kMusicDeviceProperty_InstrumentNumber = 1004
+[constant] kMusicDeviceProperty_MIDIXMLNames = 1006
+[constant] kMusicDeviceProperty_PartGroup = 1010
+[constant] kMusicDeviceProperty_SoundBankData = 1008
+[constant] kMusicDeviceProperty_SoundBankFSRef = 1012
+[constant] kMusicDeviceProperty_SoundBankFSSpec = 1003
+[constant] kMusicDeviceProperty_SoundBankURL = 1100
+[constant] kMusicDeviceProperty_StreamFromDisk = 1011
+[constant] kMusicDeviceProperty_SupportsStartStopNote = 1014
+[constant] kMusicDeviceProperty_UsesInternalReverb = 1005
+[constant] kMusicDeviceRange = 256
+[constant] kMusicDeviceReleaseInstrumentSelect = 260
+[constant] kMusicDeviceSampleFrameMask_IsScheduled = 16777216
+[constant] kMusicDeviceSampleFrameMask_SampleOffset = 16777215
+[constant] kMusicDeviceStartNoteSelect = 261
+[constant] kMusicDeviceStopNoteSelect = 262
+[constant] kMusicDeviceSysExSelect = 258
+[constant] kMusicNoteEvent_Unused = 4294967295
+[constant] kMusicNoteEvent_UseGroupInstrument = 4294967295
+[constant] kNewTimePitchParam_EnablePeakLocking = 6
+[constant] kNewTimePitchParam_Overlap = 4
+[constant] kNewTimePitchParam_Pitch = 1
+[constant] kNewTimePitchParam_Rate = 0
+[constant] kNumAUNBandEQFilterTypes = 11
+[constant] kNumberOfResponseFrequencies = 1024
+[constant] kOfflinePreflight_NotRequired = 0
+[constant] kOfflinePreflight_Optional = 1
+[constant] kOfflinePreflight_Required = 2
+[constant] kOtherPluginFormat_AU = 3
+[constant] kOtherPluginFormat_Undefined = 0
+[constant] kOtherPluginFormat_kMAS = 1
+[constant] kOtherPluginFormat_kVST = 2
+[constant] kPannerParam_Azimuth = 1
+[constant] kPannerParam_CoordScale = 4
+[constant] kPannerParam_Distance = 3
+[constant] kPannerParam_Elevation = 2
+[constant] kPannerParam_Gain = 0
+[constant] kPannerParam_RefDistance = 5
 [constant] kPanningMode_SoundField = 3
 [constant] kPanningMode_VectorBasedPanning = 4
+[constant] kParameterEvent_Immediate = 1
+[constant] kParameterEvent_Ramped = 2
+[constant] kParametricEQParam_CenterFreq = 0
+[constant] kParametricEQParam_Gain = 2
+[constant] kParametricEQParam_Q = 1
+[constant] kProgramTargetLevel_Minus20dB = 3
+[constant] kProgramTargetLevel_Minus23dB = 2
+[constant] kProgramTargetLevel_Minus31dB = 1
+[constant] kProgramTargetLevel_None = 0
+[constant] kRandomParam_BoundA = 0
+[constant] kRandomParam_BoundB = 1
+[constant] kRandomParam_Curve = 2
+[constant] kRenderQuality_High = 96
+[constant] kRenderQuality_Low = 32
+[constant] kRenderQuality_Max = 127
+[constant] kRenderQuality_Medium = 64
+[constant] kRenderQuality_Min = 0
+[constant] kReverb2Param_DecayTimeAt0Hz = 4
+[constant] kReverb2Param_DecayTimeAtNyquist = 5
+[constant] kReverb2Param_DryWetMix = 0
+[constant] kReverb2Param_Gain = 1
+[constant] kReverb2Param_MaxDelayTime = 3
+[constant] kReverb2Param_MinDelayTime = 2
+[constant] kReverb2Param_RandomizeReflections = 6
+[constant] kReverbParam_DryWetMix = 0
+[constant] kReverbParam_FilterBandwidth = 15
+[constant] kReverbParam_FilterEnable = 18
+[constant] kReverbParam_FilterFrequency = 14
+[constant] kReverbParam_FilterGain = 16
+[constant] kReverbParam_FilterType = 17
+[constant] kReverbParam_LargeBrightness = 10
+[constant] kReverbParam_LargeDelay = 5
+[constant] kReverbParam_LargeDelayRange = 8
+[constant] kReverbParam_LargeDensity = 7
+[constant] kReverbParam_LargeSize = 3
+[constant] kReverbParam_ModulationDepth = 13
+[constant] kReverbParam_ModulationRate = 12
+[constant] kReverbParam_PreDelay = 4
+[constant] kReverbParam_SmallBrightness = 9
+[constant] kReverbParam_SmallDelayRange = 11
+[constant] kReverbParam_SmallDensity = 6
+[constant] kReverbParam_SmallLargeMix = 1
+[constant] kReverbParam_SmallSize = 2
+[constant] kReverbRoomType_Cathedral = 8
+[constant] kReverbRoomType_LargeChamber = 7
+[constant] kReverbRoomType_LargeHall = 4
+[constant] kReverbRoomType_LargeHall2 = 12
+[constant] kReverbRoomType_LargeRoom = 2
+[constant] kReverbRoomType_LargeRoom2 = 9
+[constant] kReverbRoomType_MediumChamber = 6
+[constant] kReverbRoomType_MediumHall = 3
+[constant] kReverbRoomType_MediumHall2 = 10
+[constant] kReverbRoomType_MediumHall3 = 11
+[constant] kReverbRoomType_MediumRoom = 1
+[constant] kReverbRoomType_Plate = 5
+[constant] kReverbRoomType_SmallRoom = 0
+[constant] kRogerBeepParam_InGateThreshold = 0
+[constant] kRogerBeepParam_InGateThresholdTime = 1
+[constant] kRogerBeepParam_OutGateThreshold = 2
+[constant] kRogerBeepParam_OutGateThresholdTime = 3
+[constant] kRogerBeepParam_RogerGain = 6
+[constant] kRogerBeepParam_RogerType = 5
+[constant] kRogerBeepParam_Sensitivity = 4
+[constant] kRoundTripAACParam_BitRate = 1
+[constant] kRoundTripAACParam_CompressedFormatSampleRate = 3
+[constant] kRoundTripAACParam_EncodingStrategy = 1
+[constant] kRoundTripAACParam_Format = 0
+[constant] kRoundTripAACParam_Quality = 2
+[constant] kRoundTripAACParam_RateOrQuality = 2
 [constant] kSMPTETimeRunning = 2
 [constant] kSMPTETimeType2398 = 11
 [constant] kSMPTETimeType24 = 0
@@ -1332,10 +2517,81 @@
 [constant] kSMPTETimeType60Drop = 8
 [constant] kSMPTETimeUnknown = 0
 [constant] kSMPTETimeValid = 1
+[constant] kScheduledAudioSliceFlag_BeganToRender = 2
+[constant] kScheduledAudioSliceFlag_BeganToRenderLate = 4
+[constant] kScheduledAudioSliceFlag_Complete = 1
+[constant] kScheduledAudioSliceFlag_Interrupt = 16
+[constant] kScheduledAudioSliceFlag_InterruptAtLoop = 32
+[constant] kScheduledAudioSliceFlag_Loop = 8
+[constant] kSpatialMixerAttenuationCurve_Exponential = 1
+[constant] kSpatialMixerAttenuationCurve_Inverse = 2
+[constant] kSpatialMixerAttenuationCurve_Linear = 3
+[constant] kSpatialMixerAttenuationCurve_Power = 0
+[constant] kSpatialMixerParam_Azimuth = 0
+[constant] kSpatialMixerParam_Distance = 2
+[constant] kSpatialMixerParam_Elevation = 1
+[constant] kSpatialMixerParam_Enable = 5
+[constant] kSpatialMixerParam_Gain = 3
+[constant] kSpatialMixerParam_GlobalReverbGain = 9
+[constant] kSpatialMixerParam_MaxGain = 7
+[constant] kSpatialMixerParam_MinGain = 6
+[constant] kSpatialMixerParam_ObstructionAttenuation = 11
+[constant] kSpatialMixerParam_OcclusionAttenuation = 10
+[constant] kSpatialMixerParam_PlaybackRate = 4
+[constant] kSpatialMixerParam_ReverbBlend = 8
+[constant] kSpatialMixerRenderingFlags_DistanceAttenuation = 4
+[constant] kSpatialMixerRenderingFlags_InterAuralDelay = 1
+[constant] kSpatializationAlgorithm_EqualPowerPanning = 0
+[constant] kSpatializationAlgorithm_HRTF = 2
+[constant] kSpatializationAlgorithm_SoundField = 3
+[constant] kSpatializationAlgorithm_SphericalHead = 1
+[constant] kSpatializationAlgorithm_StereoPassThrough = 5
+[constant] kSpatializationAlgorithm_VectorBasedPanning = 4
+[constant] kSpeakerConfiguration_5_0 = 3
+[constant] kSpeakerConfiguration_5_1 = 3
+[constant] kSpeakerConfiguration_HeadPhones = 0
+[constant] kSpeakerConfiguration_Quad = 2
+[constant] kSpeakerConfiguration_Stereo = 1
+[constant] kStereoMixerParam_Pan = 1
+[constant] kStereoMixerParam_PostAveragePower = 3000
+[constant] kStereoMixerParam_PostPeakHoldLevel = 4000
+[constant] kStereoMixerParam_PreAveragePower = 1000
+[constant] kStereoMixerParam_PrePeakHoldLevel = 2000
+[constant] kStereoMixerParam_Volume = 0
 [constant] kSystemSoundID_FlashScreen = 4094
 [constant] kSystemSoundID_UserPreferredAlert = 4096
+[constant] kTimePitchParam_EffectBlend = 2
+[constant] kTimePitchParam_Pitch = 1
+[constant] kTimePitchParam_Rate = 0
 [constant] kUserPreferredAlert = 4096
+[constant] kVarispeedParam_PlaybackCents = 1
+[constant] kVarispeedParam_PlaybackRate = 0
 
+[typedef] AU3DMixerAttenuationCurve = UInt32
+[typedef] AU3DMixerRenderingFlags = UInt32
+[typedef] AUChannelInfo = struct AUChannelInfo
+[typedef] AUDependentParameter = struct AUDependentParameter
+[typedef] AUDistanceAttenuationData = struct AUDistanceAttenuationData
+[typedef] AUHostIdentifier = struct AUHostIdentifier
+[typedef] AUHostVersionIdentifier = struct AUHostVersionIdentifier
+[typedef] AUInputSamplesInOutputCallback = void (*)(void * _Nonnull, const AudioTimeStamp * _Nonnull, Float64, Float64)
+[typedef] AUInputSamplesInOutputCallbackStruct = struct AUInputSamplesInOutputCallbackStruct
+[typedef] AUMIDIOutputCallback = OSStatus (*)(void * _Nullable, const AudioTimeStamp * _Nonnull, UInt32, const struct MIDIPacketList * _Nonnull)
+[typedef] AUMIDIOutputCallbackStruct = struct AUMIDIOutputCallbackStruct
+[typedef] AUNumVersion = struct AUNumVersion
+[typedef] AUParameterEventType = UInt32
+[typedef] AUParameterMIDIMapping = struct AUParameterMIDIMapping
+[typedef] AUParameterMIDIMappingFlags = UInt32
+[typedef] AUPreset = struct AUPreset
+[typedef] AURenderCallback = OSStatus (*)(void * _Nonnull, AudioUnitRenderActionFlags * _Nonnull, const AudioTimeStamp * _Nonnull, UInt32, UInt32, AudioBufferList * _Nullable)
+[typedef] AURenderCallbackStruct = struct AURenderCallbackStruct
+[typedef] AUReverbRoomType = UInt32
+[typedef] AUSamplerBankPresetData = struct AUSamplerBankPresetData
+[typedef] AUSamplerInstrumentData = struct AUSamplerInstrumentData
+[typedef] AUScheduledAudioSliceFlags = UInt32
+[typedef] AUSpatialMixerAttenuationCurve = UInt32
+[typedef] AUSpatialMixerRenderingFlags = UInt32
+[typedef] AUSpatializationAlgorithm = UInt32
 [typedef] AudioBalanceFade = struct AudioBalanceFade
 [typedef] AudioBalanceFadeType = UInt32
 [typedef] AudioBuffer = struct AudioBuffer
@@ -1351,6 +2607,29 @@
 [typedef] AudioChannelLayoutTag = UInt32
 [typedef] AudioClassDescription = struct AudioClassDescription
 [typedef] AudioClassID = UInt32
+[typedef] AudioCodec = AudioComponentInstance
+[typedef] AudioCodecAppendInputBufferListProc = OSStatus (*)(void * _Nonnull, const AudioBufferList * _Nonnull, UInt32 * _Nonnull, const AudioStreamPacketDescription * _Nullable, UInt32 * _Nonnull)
+[typedef] AudioCodecAppendInputDataProc = OSStatus (*)(void * _Nonnull, const void * _Nonnull, UInt32 * _Nonnull, UInt32 * _Nonnull, const AudioStreamPacketDescription * _Nullable)
+[typedef] AudioCodecGetPropertyInfoProc = OSStatus (*)(void * _Nonnull, AudioCodecPropertyID, UInt32 * _Nullable, Boolean * _Nullable)
+[typedef] AudioCodecGetPropertyProc = OSStatus (*)(void * _Nonnull, AudioCodecPropertyID, UInt32 * _Nonnull, void * _Nonnull)
+[typedef] AudioCodecInitializeProc = OSStatus (*)(void * _Nonnull, const AudioStreamBasicDescription * _Nullable, const AudioStreamBasicDescription * _Nullable, const void * _Nullable, UInt32)
+[typedef] AudioCodecMagicCookieInfo = struct AudioCodecMagicCookieInfo
+[typedef] AudioCodecPrimeInfo = struct AudioCodecPrimeInfo
+[typedef] AudioCodecProduceOutputBufferListProc = OSStatus (*)(void * _Nonnull, AudioBufferList * _Nonnull, UInt32 * _Nonnull, AudioStreamPacketDescription * _Nullable, UInt32 * _Nonnull)
+[typedef] AudioCodecProduceOutputPacketsProc = OSStatus (*)(void * _Nonnull, void * _Nonnull, UInt32 * _Nonnull, UInt32 * _Nonnull, AudioStreamPacketDescription * _Nullable, UInt32 * _Nonnull)
+[typedef] AudioCodecPropertyID = UInt32
+[typedef] AudioCodecResetProc = OSStatus (*)(void * _Nonnull)
+[typedef] AudioCodecSetPropertyProc = OSStatus (*)(void * _Nonnull, AudioCodecPropertyID, UInt32, const void * _Nonnull)
+[typedef] AudioCodecUninitializeProc = OSStatus (*)(void * _Nonnull)
+[typedef] AudioComponent = struct OpaqueAudioComponent *
+[typedef] AudioComponentDescription = struct AudioComponentDescription
+[typedef] AudioComponentFactoryFunction = AudioComponentPlugInInterface * _Nullable (*)(const AudioComponentDescription * _Nonnull)
+[typedef] AudioComponentFlags = UInt32
+[typedef] AudioComponentInstance = struct ComponentInstanceRecord *
+[typedef] AudioComponentInstantiationOptions = UInt32
+[typedef] AudioComponentMethod = OSStatus (*)(void * _Nonnull, ...)
+[typedef] AudioComponentPlugInInterface = struct AudioComponentPlugInInterface
+[typedef] AudioComponentValidationResult = UInt32
 [typedef] AudioConverterComplexInputDataProc = OSStatus (*)(AudioConverterRef _Nonnull, UInt32 * _Nonnull, AudioBufferList * _Nonnull, AudioStreamPacketDescription * _Nullable * _Nullable, void * _Nullable)
 [typedef] AudioConverterInputDataProc = OSStatus (*)(AudioConverterRef _Nonnull, UInt32 * _Nonnull, void * _Nonnull * _Nonnull, void * _Nullable)
 [typedef] AudioConverterPrimeInfo = struct AudioConverterPrimeInfo
@@ -1404,6 +2683,9 @@
 [typedef] AudioObjectPropertyListenerProc = OSStatus (*)(AudioObjectID, UInt32, const AudioObjectPropertyAddress * _Nonnull, void * _Nullable)
 [typedef] AudioObjectPropertyScope = UInt32
 [typedef] AudioObjectPropertySelector = UInt32
+[typedef] AudioOutputUnitStartAtTimeParams = struct AudioOutputUnitStartAtTimeParams
+[typedef] AudioOutputUnitStartProc = OSStatus (*)(void * _Nonnull)
+[typedef] AudioOutputUnitStopProc = OSStatus (*)(void * _Nonnull)
 [typedef] AudioPanningInfo = struct AudioPanningInfo
 [typedef] AudioPanningMode = UInt32
 [typedef] AudioQueueBuffer = struct AudioQueueBuffer
@@ -1426,6 +2708,7 @@
 [typedef] AudioSampleType = Float32
 [typedef] AudioServicesPropertyID = UInt32
 [typedef] AudioServicesSystemSoundCompletionProc = void (*)(SystemSoundID, void * _Nullable)
+[typedef] AudioSettingsFlags = UInt32
 [typedef] AudioStreamBasicDescription = struct AudioStreamBasicDescription
 [typedef] AudioStreamID = AudioObjectID
 [typedef] AudioStreamPacketDescription = struct AudioStreamPacketDescription
@@ -1433,18 +2716,110 @@
 [typedef] AudioStreamRangedDescription = struct AudioStreamRangedDescription
 [typedef] AudioTimeStamp = struct AudioTimeStamp
 [typedef] AudioTimeStampFlags = UInt32
+[typedef] AudioUnit = AudioComponentInstance
+[typedef] AudioUnitAddPropertyListenerProc = OSStatus (*)(void * _Nonnull, AudioUnitPropertyID, AudioUnitPropertyListenerProc _Nonnull, void * _Nonnull)
+[typedef] AudioUnitAddRenderNotifyProc = OSStatus (*)(void * _Nonnull, AURenderCallback _Nonnull, void * _Nullable)
+[typedef] AudioUnitCocoaViewInfo = struct AudioUnitCocoaViewInfo
+[typedef] AudioUnitComplexRenderProc = OSStatus (*)(void * _Nonnull, AudioUnitRenderActionFlags * _Nullable, const AudioTimeStamp * _Nonnull, UInt32, UInt32, UInt32 * _Nonnull, AudioStreamPacketDescription * _Nonnull, AudioBufferList * _Nonnull, void * _Nonnull, UInt32 * _Nonnull)
+[typedef] AudioUnitConnection = struct AudioUnitConnection
+[typedef] AudioUnitElement = UInt32
+[typedef] AudioUnitExternalBuffer = struct AudioUnitExternalBuffer
+[typedef] AudioUnitFrequencyResponseBin = struct AudioUnitFrequencyResponseBin
+[typedef] AudioUnitGetParameterProc = OSStatus (*)(void * _Nonnull, AudioUnitParameterID, AudioUnitScope, AudioUnitElement, AudioUnitParameterValue * _Nonnull)
+[typedef] AudioUnitGetPropertyInfoProc = OSStatus (*)(void * _Nonnull, AudioUnitPropertyID, AudioUnitScope, AudioUnitElement, UInt32 * _Nullable, Boolean * _Nullable)
+[typedef] AudioUnitGetPropertyProc = OSStatus (*)(void * _Nonnull, AudioUnitPropertyID, AudioUnitScope, AudioUnitElement, void * _Nonnull, UInt32 * _Nonnull)
+[typedef] AudioUnitInitializeProc = OSStatus (*)(void * _Nonnull)
+[typedef] AudioUnitMIDIControlMapping = struct AudioUnitMIDIControlMapping
+[typedef] AudioUnitMeterClipping = struct AudioUnitMeterClipping
+[typedef] AudioUnitOtherPluginDesc = struct AudioUnitOtherPluginDesc
+[typedef] AudioUnitParameter = struct AudioUnitParameter
+[typedef] AudioUnitParameterEvent = struct AudioUnitParameterEvent
+[typedef] AudioUnitParameterHistoryInfo = struct AudioUnitParameterHistoryInfo
+[typedef] AudioUnitParameterID = UInt32
+[typedef] AudioUnitParameterIDName = struct AudioUnitParameterNameInfo
+[typedef] AudioUnitParameterInfo = struct AudioUnitParameterInfo
+[typedef] AudioUnitParameterOptions = UInt32
+[typedef] AudioUnitParameterStringFromValue = struct AudioUnitParameterStringFromValue
+[typedef] AudioUnitParameterUnit = UInt32
+[typedef] AudioUnitParameterValue = Float32
+[typedef] AudioUnitParameterValueFromString = struct AudioUnitParameterValueFromString
+[typedef] AudioUnitParameterValueName = struct AudioUnitParameterValueName
+[typedef] AudioUnitParameterValueTranslation = struct AudioUnitParameterValueTranslation
+[typedef] AudioUnitPresetMAS_SettingData = struct AudioUnitPresetMAS_SettingData
+[typedef] AudioUnitPresetMAS_Settings = struct AudioUnitPresetMAS_Settings
+[typedef] AudioUnitProcessMultipleProc = OSStatus (*)(void * _Nonnull, AudioUnitRenderActionFlags * _Nullable, const AudioTimeStamp * _Nonnull, UInt32, UInt32, const AudioBufferList * _Nonnull * _Nonnull, UInt32, AudioBufferList * _Nonnull * _Nonnull)
+[typedef] AudioUnitProcessProc = OSStatus (*)(void * _Nonnull, AudioUnitRenderActionFlags * _Nullable, const AudioTimeStamp * _Nonnull, UInt32, AudioBufferList * _Nonnull)
+[typedef] AudioUnitProperty = struct AudioUnitProperty
+[typedef] AudioUnitPropertyID = UInt32
+[typedef] AudioUnitPropertyListenerProc = void (*)(void * _Nonnull, AudioUnit _Nonnull, AudioUnitPropertyID, AudioUnitScope, AudioUnitElement)
+[typedef] AudioUnitRemovePropertyListenerProc = OSStatus (*)(void * _Nonnull, AudioUnitPropertyID, AudioUnitPropertyListenerProc _Nonnull)
+[typedef] AudioUnitRemovePropertyListenerWithUserDataProc = OSStatus (*)(void * _Nonnull, AudioUnitPropertyID, AudioUnitPropertyListenerProc _Nonnull, void * _Nullable)
+[typedef] AudioUnitRemoveRenderNotifyProc = OSStatus (*)(void * _Nonnull, AURenderCallback _Nonnull, void * _Nullable)
+[typedef] AudioUnitRenderActionFlags = UInt32
+[typedef] AudioUnitRenderProc = OSStatus (*)(void * _Nonnull, AudioUnitRenderActionFlags * _Nullable, const AudioTimeStamp * _Nonnull, UInt32, UInt32, AudioBufferList * _Nonnull)
+[typedef] AudioUnitResetProc = OSStatus (*)(void * _Nonnull, AudioUnitScope, AudioUnitElement)
 [typedef] AudioUnitSampleType = Float32
+[typedef] AudioUnitScheduleParametersProc = OSStatus (*)(void * _Nonnull, const AudioUnitParameterEvent * _Nonnull, UInt32)
+[typedef] AudioUnitScope = UInt32
+[typedef] AudioUnitSetParameterProc = OSStatus (*)(void * _Nonnull, AudioUnitParameterID, AudioUnitScope, AudioUnitElement, AudioUnitParameterValue, UInt32)
+[typedef] AudioUnitSetPropertyProc = OSStatus (*)(void * _Nonnull, AudioUnitPropertyID, AudioUnitScope, AudioUnitElement, const void * _Nonnull, UInt32)
+[typedef] AudioUnitUninitializeProc = OSStatus (*)(void * _Nonnull)
 [typedef] AudioValueRange = struct AudioValueRange
 [typedef] AudioValueTranslation = struct AudioValueTranslation
 [typedef] ExtAudioFilePropertyID = UInt32
 [typedef] ExtAudioFileRef = struct OpaqueExtAudioFile *
 [typedef] ExtendedAudioFormatInfo = struct ExtendedAudioFormatInfo
+[typedef] HostCallbackInfo = struct HostCallbackInfo
+[typedef] HostCallback_GetBeatAndTempo = OSStatus (*)(void * _Nullable, Float64 * _Nullable, Float64 * _Nullable)
+[typedef] HostCallback_GetMusicalTimeLocation = OSStatus (*)(void * _Nullable, UInt32 * _Nullable, Float32 * _Nullable, UInt32 * _Nullable, Float64 * _Nullable)
+[typedef] HostCallback_GetTransportState = OSStatus (*)(void * _Nullable, Boolean * _Nullable, Boolean * _Nullable, Float64 * _Nullable, Boolean * _Nullable, Float64 * _Nullable, Float64 * _Nullable)
+[typedef] HostCallback_GetTransportState2 = OSStatus (*)(void * _Nullable, Boolean * _Nullable, Boolean * _Nullable, Boolean * _Nullable, Float64 * _Nullable, Boolean * _Nullable, Float64 * _Nullable, Float64 * _Nullable)
 [typedef] MPEG4ObjectID = long
+[typedef] MagicCookieInfo = struct AudioCodecMagicCookieInfo
+[typedef] MixerDistanceParams = struct MixerDistanceParams
+[typedef] MusicDeviceComponent = AudioComponentInstance
+[typedef] MusicDeviceGroupID = UInt32
+[typedef] MusicDeviceInstrumentID = UInt32
+[typedef] MusicDeviceMIDIEventProc = OSStatus (*)(void * _Nonnull, UInt32, UInt32, UInt32, UInt32)
+[typedef] MusicDeviceNoteParams = struct MusicDeviceNoteParams
+[typedef] MusicDeviceStartNoteProc = OSStatus (*)(void * _Nonnull, MusicDeviceInstrumentID, MusicDeviceGroupID, NoteInstanceID * _Nonnull, UInt32, const MusicDeviceNoteParams * _Nonnull)
+[typedef] MusicDeviceStdNoteParams = struct MusicDeviceStdNoteParams
+[typedef] MusicDeviceStopNoteProc = OSStatus (*)(void * _Nonnull, MusicDeviceGroupID, NoteInstanceID, UInt32)
+[typedef] MusicDeviceSysExProc = OSStatus (*)(void * _Nonnull, const UInt8 * _Nonnull, UInt32)
+[typedef] NoteInstanceID = UInt32
+[typedef] NoteParamsControlValue = struct NoteParamsControlValue
 [typedef] SMPTETime = struct SMPTETime
 [typedef] SMPTETimeFlags = UInt32
 [typedef] SMPTETimeType = UInt32
+[typedef] ScheduledAudioFileRegion = struct ScheduledAudioFileRegion
+[typedef] ScheduledAudioFileRegionCompletionProc = void (*)(void * _Nullable, ScheduledAudioFileRegion * _Nonnull, OSStatus)
+[typedef] ScheduledAudioSlice = struct ScheduledAudioSlice
+[typedef] ScheduledAudioSliceCompletionProc = void (*)(void * _Nullable, ScheduledAudioSlice * _Nonnull)
 [typedef] SystemSoundID = UInt32
 
+[function] AudioCodecAppendInputBufferList = OSStatus (AudioCodec _Nonnull, const AudioBufferList * _Nonnull, UInt32 * _Nonnull, const AudioStreamPacketDescription * _Nullable, UInt32 * _Nonnull)
+[function] AudioCodecAppendInputData = OSStatus (AudioCodec _Nonnull, const void * _Nonnull, UInt32 * _Nonnull, UInt32 * _Nonnull, const AudioStreamPacketDescription * _Nullable)
+[function] AudioCodecGetProperty = OSStatus (AudioCodec _Nonnull, AudioCodecPropertyID, UInt32 * _Nonnull, void * _Nonnull)
+[function] AudioCodecGetPropertyInfo = OSStatus (AudioCodec _Nonnull, AudioCodecPropertyID, UInt32 * _Nullable, Boolean * _Nullable)
+[function] AudioCodecInitialize = OSStatus (AudioCodec _Nonnull, const AudioStreamBasicDescription * _Nullable, const AudioStreamBasicDescription * _Nullable, const void * _Nullable, UInt32)
+[function] AudioCodecProduceOutputBufferList = OSStatus (AudioCodec _Nonnull, AudioBufferList * _Nonnull, UInt32 * _Nonnull, AudioStreamPacketDescription * _Nullable, UInt32 * _Nonnull)
+[function] AudioCodecProduceOutputPackets = OSStatus (AudioCodec _Nonnull, void * _Nonnull, UInt32 * _Nonnull, UInt32 * _Nonnull, AudioStreamPacketDescription * _Nullable, UInt32 * _Nonnull)
+[function] AudioCodecReset = OSStatus (AudioCodec _Nonnull)
+[function] AudioCodecSetProperty = OSStatus (AudioCodec _Nonnull, AudioCodecPropertyID, UInt32, const void * _Nonnull)
+[function] AudioCodecUninitialize = OSStatus (AudioCodec _Nonnull)
+[function] AudioComponentCopyConfigurationInfo = OSStatus (AudioComponent _Nonnull, CFDictionaryRef  _Nullable * _Nonnull)
+[function] AudioComponentCopyName = OSStatus (AudioComponent _Nonnull, CFStringRef  _Nullable * _Nonnull)
+[function] AudioComponentCount = UInt32 (const AudioComponentDescription * _Nonnull)
+[function] AudioComponentFindNext = AudioComponent  _Nullable (AudioComponent _Nullable, const AudioComponentDescription * _Nonnull)
+[function] AudioComponentGetDescription = OSStatus (AudioComponent _Nonnull, AudioComponentDescription * _Nonnull)
+[function] AudioComponentGetVersion = OSStatus (AudioComponent _Nonnull, UInt32 * _Nonnull)
+[function] AudioComponentInstanceCanDo = Boolean (AudioComponentInstance _Nonnull, SInt16)
+[function] AudioComponentInstanceDispose = OSStatus (AudioComponentInstance _Nonnull)
+[function] AudioComponentInstanceGetComponent = AudioComponent  _Nonnull (AudioComponentInstance _Nonnull)
+[function] AudioComponentInstanceNew = OSStatus (AudioComponent _Nonnull, AudioComponentInstance  _Nullable * _Nonnull)
+[function] AudioComponentInstantiate = void (AudioComponent _Nonnull, AudioComponentInstantiationOptions, void (^ _Nonnull)(AudioComponentInstance _Nullable, OSStatus))
+[function] AudioComponentRegister = AudioComponent  _Nonnull (const AudioComponentDescription * _Nonnull, CFStringRef _Nonnull, UInt32, AudioComponentFactoryFunction _Nonnull)
+[function] AudioComponentValidate = OSStatus (AudioComponent _Nonnull, CFDictionaryRef _Nullable, AudioComponentValidationResult * _Nonnull)
 [function] AudioConvertHostTimeToNanos = UInt64 (UInt64)
 [function] AudioConvertNanosToHostTime = UInt64 (UInt64)
 [function] AudioConverterConvertBuffer = OSStatus (AudioConverterRef _Nonnull, UInt32, const void * _Nonnull, UInt32 * _Nonnull, void * _Nonnull)
@@ -1538,6 +2913,8 @@
 [function] AudioObjectRemovePropertyListenerBlock = OSStatus (AudioObjectID, const AudioObjectPropertyAddress * _Nonnull, dispatch_queue_t _Nullable, AudioObjectPropertyListenerBlock _Nonnull)
 [function] AudioObjectSetPropertyData = OSStatus (AudioObjectID, const AudioObjectPropertyAddress * _Nonnull, UInt32, const void * _Nullable, UInt32, const void * _Nonnull)
 [function] AudioObjectShow = void (AudioObjectID)
+[function] AudioOutputUnitStart = OSStatus (AudioUnit _Nonnull)
+[function] AudioOutputUnitStop = OSStatus (AudioUnit _Nonnull)
 [function] AudioQueueAddPropertyListener = OSStatus (AudioQueueRef _Nonnull, AudioQueuePropertyID, AudioQueuePropertyListenerProc _Nonnull, void * _Nullable)
 [function] AudioQueueAllocateBuffer = OSStatus (AudioQueueRef _Nonnull, UInt32, AudioQueueBufferRef  _Nullable * _Nonnull)
 [function] AudioQueueAllocateBufferWithPacketDescriptions = OSStatus (AudioQueueRef _Nonnull, UInt32, UInt32, AudioQueueBufferRef  _Nullable * _Nonnull)
@@ -1589,6 +2966,22 @@
 [function] AudioStreamGetPropertyInfo = OSStatus (AudioStreamID, UInt32, AudioDevicePropertyID, UInt32 * _Nullable, Boolean * _Nullable)
 [function] AudioStreamRemovePropertyListener = OSStatus (AudioStreamID, UInt32, AudioDevicePropertyID, AudioStreamPropertyListenerProc _Nonnull)
 [function] AudioStreamSetProperty = OSStatus (AudioStreamID, const AudioTimeStamp * _Nullable, UInt32, AudioDevicePropertyID, UInt32, const void * _Nonnull)
+[function] AudioUnitAddPropertyListener = OSStatus (AudioUnit _Nonnull, AudioUnitPropertyID, AudioUnitPropertyListenerProc _Nonnull, void * _Nullable)
+[function] AudioUnitAddRenderNotify = OSStatus (AudioUnit _Nonnull, AURenderCallback _Nonnull, void * _Nullable)
+[function] AudioUnitGetParameter = OSStatus (AudioUnit _Nonnull, AudioUnitParameterID, AudioUnitScope, AudioUnitElement, AudioUnitParameterValue * _Nonnull)
+[function] AudioUnitGetProperty = OSStatus (AudioUnit _Nonnull, AudioUnitPropertyID, AudioUnitScope, AudioUnitElement, void * _Nonnull, UInt32 * _Nonnull)
+[function] AudioUnitGetPropertyInfo = OSStatus (AudioUnit _Nonnull, AudioUnitPropertyID, AudioUnitScope, AudioUnitElement, UInt32 * _Nullable, Boolean * _Nullable)
+[function] AudioUnitInitialize = OSStatus (AudioUnit _Nonnull)
+[function] AudioUnitProcess = OSStatus (AudioUnit _Nonnull, AudioUnitRenderActionFlags * _Nullable, const AudioTimeStamp * _Nonnull, UInt32, AudioBufferList * _Nonnull)
+[function] AudioUnitProcessMultiple = OSStatus (AudioUnit _Nonnull, AudioUnitRenderActionFlags * _Nullable, const AudioTimeStamp * _Nonnull, UInt32, UInt32, const AudioBufferList * _Nonnull * _Nonnull, UInt32, AudioBufferList * _Nonnull * _Nonnull)
+[function] AudioUnitRemovePropertyListenerWithUserData = OSStatus (AudioUnit _Nonnull, AudioUnitPropertyID, AudioUnitPropertyListenerProc _Nonnull, void * _Nullable)
+[function] AudioUnitRemoveRenderNotify = OSStatus (AudioUnit _Nonnull, AURenderCallback _Nonnull, void * _Nullable)
+[function] AudioUnitRender = OSStatus (AudioUnit _Nonnull, AudioUnitRenderActionFlags * _Nullable, const AudioTimeStamp * _Nonnull, UInt32, UInt32, AudioBufferList * _Nonnull)
+[function] AudioUnitReset = OSStatus (AudioUnit _Nonnull, AudioUnitScope, AudioUnitElement)
+[function] AudioUnitScheduleParameters = OSStatus (AudioUnit _Nonnull, const AudioUnitParameterEvent * _Nonnull, UInt32)
+[function] AudioUnitSetParameter = OSStatus (AudioUnit _Nonnull, AudioUnitParameterID, AudioUnitScope, AudioUnitElement, AudioUnitParameterValue, UInt32)
+[function] AudioUnitSetProperty = OSStatus (AudioUnit _Nonnull, AudioUnitPropertyID, AudioUnitScope, AudioUnitElement, const void * _Nullable, UInt32)
+[function] AudioUnitUninitialize = OSStatus (AudioUnit _Nonnull)
 [function] ExtAudioFileCreateNew = OSStatus (const struct FSRef * _Nonnull, CFStringRef _Nonnull, AudioFileTypeID, const AudioStreamBasicDescription * _Nonnull, const AudioChannelLayout * _Nullable, ExtAudioFileRef  _Nullable * _Nonnull)
 [function] ExtAudioFileCreateWithURL = OSStatus (CFURLRef _Nonnull, AudioFileTypeID, const AudioStreamBasicDescription * _Nonnull, const AudioChannelLayout * _Nullable, UInt32, ExtAudioFileRef  _Nullable * _Nonnull)
 [function] ExtAudioFileDispose = OSStatus (ExtAudioFileRef _Nonnull)
@@ -1603,3 +2996,9 @@
 [function] ExtAudioFileWrapAudioFileID = OSStatus (AudioFileID _Nonnull, Boolean, ExtAudioFileRef  _Nullable * _Nonnull)
 [function] ExtAudioFileWrite = OSStatus (ExtAudioFileRef _Nonnull, UInt32, const AudioBufferList * _Nonnull)
 [function] ExtAudioFileWriteAsync = OSStatus (ExtAudioFileRef _Nonnull, UInt32, const AudioBufferList * _Nullable)
+[function] MusicDeviceMIDIEvent = OSStatus (MusicDeviceComponent _Nonnull, UInt32, UInt32, UInt32, UInt32)
+[function] MusicDevicePrepareInstrument = OSStatus (MusicDeviceComponent _Nonnull, MusicDeviceInstrumentID)
+[function] MusicDeviceReleaseInstrument = OSStatus (MusicDeviceComponent _Nonnull, MusicDeviceInstrumentID)
+[function] MusicDeviceStartNote = OSStatus (MusicDeviceComponent _Nonnull, MusicDeviceInstrumentID, MusicDeviceGroupID, NoteInstanceID * _Nonnull, UInt32, const MusicDeviceNoteParams * _Nonnull)
+[function] MusicDeviceStopNote = OSStatus (MusicDeviceComponent _Nonnull, MusicDeviceGroupID, NoteInstanceID, UInt32)
+[function] MusicDeviceSysEx = OSStatus (MusicDeviceComponent _Nonnull, const UInt8 * _Nonnull, UInt32)

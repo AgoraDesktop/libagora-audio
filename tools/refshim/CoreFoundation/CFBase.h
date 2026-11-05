@@ -22,6 +22,7 @@
 #include <stddef.h>
 
 typedef bool Boolean;
+typedef unsigned char Byte;
 typedef unsigned char UInt8;
 typedef signed char SInt8;
 typedef unsigned short UInt16;

@@ -258,6 +258,47 @@ static OSStatus (*p_AudioServicesDisposeSystemSoundID)(SystemSoundID) = AudioSer
 static void (*p_AudioServicesPlaySystemSound)(SystemSoundID) = AudioServicesPlaySystemSound;
 static void (*p_AudioServicesPlayAlertSound)(SystemSoundID) = AudioServicesPlayAlertSound;
 
+/* --- AudioToolbox/AudioComponent.h and AudioUnit.h -------------------------- */
+static AudioComponent _Nullable (*p_AudioComponentFindNext)(AudioComponent _Nullable,
+                                                             const AudioComponentDescription * _Nonnull)
+    = AudioComponentFindNext;
+static UInt32 (*p_AudioComponentCount)(const AudioComponentDescription * _Nonnull) = AudioComponentCount;
+static OSStatus (*p_AudioComponentGetDescription)(AudioComponent _Nonnull,
+                                                  AudioComponentDescription * _Nonnull)
+    = AudioComponentGetDescription;
+static OSStatus (*p_AudioComponentCopyName)(AudioComponent _Nonnull, CFStringRef _Nullable * _Nonnull)
+    = AudioComponentCopyName;
+static OSStatus (*p_AudioComponentInstanceNew)(AudioComponent _Nonnull,
+                                               AudioComponentInstance _Nullable * _Nonnull)
+    = AudioComponentInstanceNew;
+static OSStatus (*p_AudioComponentInstanceDispose)(AudioComponentInstance _Nonnull)
+    = AudioComponentInstanceDispose;
+static Boolean (*p_AudioComponentInstanceCanDo)(AudioComponentInstance _Nonnull, SInt16)
+    = AudioComponentInstanceCanDo;
+static OSStatus (*p_AudioUnitInitialize)(AudioUnit _Nonnull) = AudioUnitInitialize;
+static OSStatus (*p_AudioUnitUninitialize)(AudioUnit _Nonnull) = AudioUnitUninitialize;
+static OSStatus (*p_AudioUnitGetPropertyInfo)(AudioUnit _Nonnull, AudioUnitPropertyID, AudioUnitScope,
+                                              AudioUnitElement, UInt32 * _Nullable, Boolean * _Nullable)
+    = AudioUnitGetPropertyInfo;
+static OSStatus (*p_AudioUnitGetProperty)(AudioUnit _Nonnull, AudioUnitPropertyID, AudioUnitScope,
+                                          AudioUnitElement, void * _Nonnull, UInt32 * _Nonnull)
+    = AudioUnitGetProperty;
+static OSStatus (*p_AudioUnitSetProperty)(AudioUnit _Nonnull, AudioUnitPropertyID, AudioUnitScope,
+                                          AudioUnitElement, const void * _Nullable, UInt32)
+    = AudioUnitSetProperty;
+static OSStatus (*p_AudioUnitGetParameter)(AudioUnit _Nonnull, AudioUnitParameterID, AudioUnitScope,
+                                           AudioUnitElement, AudioUnitParameterValue * _Nonnull)
+    = AudioUnitGetParameter;
+static OSStatus (*p_AudioUnitSetParameter)(AudioUnit _Nonnull, AudioUnitParameterID, AudioUnitScope,
+                                           AudioUnitElement, AudioUnitParameterValue, UInt32)
+    = AudioUnitSetParameter;
+static OSStatus (*p_AudioUnitRender)(AudioUnit _Nonnull, AudioUnitRenderActionFlags * _Nullable,
+                                     const AudioTimeStamp * _Nonnull, UInt32, UInt32,
+                                     AudioBufferList * _Nonnull) = AudioUnitRender;
+static OSStatus (*p_AudioUnitReset)(AudioUnit _Nonnull, AudioUnitScope, AudioUnitElement) = AudioUnitReset;
+static OSStatus (*p_AudioOutputUnitStart)(AudioUnit _Nonnull) = AudioOutputUnitStart;
+static OSStatus (*p_AudioOutputUnitStop)(AudioUnit _Nonnull) = AudioOutputUnitStop;
+
 int main(void);
 int main(void)
 {
@@ -310,6 +351,15 @@ int main(void)
 		(void *)p_AudioQueueGetParameter,
 		(void *)p_AudioServicesCreateSystemSoundID, (void *)p_AudioServicesDisposeSystemSoundID,
 		(void *)p_AudioServicesPlaySystemSound, (void *)p_AudioServicesPlayAlertSound,
+		(void *)p_AudioComponentFindNext, (void *)p_AudioComponentCount,
+		(void *)p_AudioComponentGetDescription, (void *)p_AudioComponentCopyName,
+		(void *)p_AudioComponentInstanceNew, (void *)p_AudioComponentInstanceDispose,
+		(void *)p_AudioComponentInstanceCanDo, (void *)p_AudioUnitInitialize,
+		(void *)p_AudioUnitUninitialize, (void *)p_AudioUnitGetPropertyInfo,
+		(void *)p_AudioUnitGetProperty, (void *)p_AudioUnitSetProperty,
+		(void *)p_AudioUnitGetParameter, (void *)p_AudioUnitSetParameter,
+		(void *)p_AudioUnitRender, (void *)p_AudioUnitReset,
+		(void *)p_AudioOutputUnitStart, (void *)p_AudioOutputUnitStop,
 	};
 
 	return unused[0] == NULL ? 0 : 0;
