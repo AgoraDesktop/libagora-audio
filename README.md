@@ -202,8 +202,10 @@ skips, exit 77, when there is none):
   0.25 + 0.125 to **0.375**, and halving one bus's volume halves its contribution; and a graph of mixer → output
   reaches the device with that same 0.375, while a connection that would close a cycle is refused.
 - **`queue`** — a buffer of 0.5 played through a refilling callback measures **0.5** at the device, **0.25**
-  after the queue's volume is halved, **0.0** after a stop; a buffer enqueued twice is refused by name; and
-  the system sounds are audible: a WAV loaded by URL, and the **generated** alert tone.
+  after the queue's volume is halved, **0.0** after a stop; a buffer enqueued twice is refused by name; **a
+  16-bit mono 8 kHz buffer is audible on the stereo device**, which is the channel mapping the queue does because
+  the converter — like Apple's — refuses a channel-count change; and the system sounds are audible: a WAV loaded
+  by URL, and the **generated** alert tone.
 - **`auv3`** — every assertion in pairs, because the object is a view of the C unit: the default output unit's
   component description, name, one input bus and one output bus, the bus format **as the unit's own
   `StreamFormat` property reports it**, a format written through the bus arriving at the C door, the maximum

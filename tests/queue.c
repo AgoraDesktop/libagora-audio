@@ -110,6 +110,24 @@ static void fn_refill(void *client, AudioQueueRef queue, AudioQueueBufferRef buf
 	AudioQueueEnqueueBuffer(queue, buffer, 0, NULL);
 }
 
+/* The mono, 16-bit refill: the queue was told what the buffer holds, so this writes what a WAV decoder would. */
+static void fn_refill_mono(void *client, AudioQueueRef queue, AudioQueueBufferRef buffer)
+{
+	loop_state *state = client;
+	int16_t *samples = buffer->mAudioData;
+	UInt32 frames;
+	UInt32 i;
+
+	state->calls++;
+
+	frames = buffer->mAudioDataByteSize / (UInt32)sizeof(int16_t);
+	for (i = 0; i < frames; i++) {
+		samples[i] = (int16_t)(state->value * 32767.0f);
+	}
+
+	AudioQueueEnqueueBuffer(queue, buffer, 0, NULL);
+}
+
 static void fn_unused_input(void *client, AudioQueueRef queue, AudioQueueBufferRef buffer,
                             const AudioTimeStamp *time, UInt32 packets,
                             const AudioStreamPacketDescription *descriptions)
@@ -248,6 +266,67 @@ static void fn_test_queue(void)
  * The system sounds.
  * ---------------------------------------------------------------------------------------------- */
 
+/* ------------------------------------------------------------------------------------------------
+ * The channel mapping: a mono source reaches a stereo device.
+ * ---------------------------------------------------------------------------------------------- */
+
+/* **THE CASE A BEEP IS USUALLY IN.** A WAV from anywhere is often 16-bit mono, and the device is stereo; the
+ * converter refuses a channel-count change (as Apple's does, because a map is what that needs), so the queue
+ * fans it out itself. Without this the queue reports an error at creation and NSSound's `-play` answers NO —
+ * which is what this suite would have missed, because every other buffer here is already the device's format. */
+static void fn_test_mono_mapping(void)
+{
+	AudioDeviceID device = fn_default_output();
+	AudioStreamBasicDescription format = fn_pcm(8000.0, 1, 16,
+	                                            kAudioFormatFlagIsSignedInteger | kAudioFormatFlagIsPacked);
+	AudioQueueRef queue = NULL;
+	AudioQueueBufferRef buffer = NULL;
+	loop_state state;
+	OSStatus status;
+	float peak = 0.0f;
+
+	memset(&state, 0, sizeof(state));
+	state.value = 0.5f;
+
+	status = AudioQueueNewOutput(&format, fn_refill_mono, &state, NULL, NULL, 0, &queue);
+	fn_check("a mono queue on a stereo device is created", status == 0 && queue != NULL);
+	if (status != 0) {
+		return;
+	}
+
+	fn_check("an 8 kHz mono buffer is allocated",
+	         AudioQueueAllocateBuffer(queue, 1600, &buffer) == 0 && buffer != NULL);
+
+	{
+		int16_t *samples = buffer->mAudioData;
+		UInt32 i;
+
+		for (i = 0; i < 800; i++) {
+			samples[i] = (int16_t)(state.value * 32767.0f);
+		}
+		buffer->mAudioDataByteSize = 1600;
+		fn_check("the mono buffer is enqueued", AudioQueueEnqueueBuffer(queue, buffer, 0, NULL) == 0);
+	}
+
+	fn_check("the queue starts", AudioQueueStart(queue, NULL) == 0);
+
+	{
+		UInt32 walked;
+
+		for (walked = 0; walked < 2000 && state.calls == 0; walked += 10) {
+			fn_sleep_ms(10);
+		}
+	}
+	fn_check("the mono callback was asked for a buffer", state.calls > 0);
+
+	fn_sleep_ms(150);
+	fn_agora_audio_test_peaks(device, &peak, NULL);
+	fn_check("a mono source is audible on the stereo device", peak > 0.4f && peak < 0.6f);
+
+	AudioQueueStop(queue, true);
+	AudioQueueDispose(queue, true);
+}
+
 static void fn_test_system_sounds(void)
 {
 	char path[] = "/tmp/agora-queue-XXXXXX";
@@ -323,6 +402,7 @@ int main(void)
 	fn_agora_audio_set_driver("null");
 
 	fn_test_queue();
+	fn_test_mono_mapping();
 	fn_test_system_sounds();
 
 	if (g_failures != 0) {

@@ -63,6 +63,17 @@ struct OpaqueAudioQueue {
 	AudioStreamBasicDescription device_format;
 	AudioConverterRef           converter;
 
+	/* **THE CONVERTER'S TARGET IS NOT ALWAYS THE DEVICE'S FORMAT.** `AudioConverterNew` refuses a channel-count
+	 * change — it is a property of a channel map, and Apple refuses it too — so a MONO sound on a stereo device
+	 * would be unplayable if the queue asked the converter for the device's description. Instead the converter
+	 * is asked for the *client's* channel count at the device's rate, and the queue fans the result out (or
+	 * sums it down) on the way into the device buffer. That is the channel mapping Apple's AudioQueue does, in
+	 * the one place this library can do it without teaching the converter to lie about what it supports. */
+	AudioStreamBasicDescription convert_format;
+	bool                        map_channels;
+	float *                     map_scratch;
+	UInt32                      map_capacity;	/* frames the scratch holds */
+
 	AudioQueueOutputCallback        callback;
 	AudioQueueOutputCallbackBlock   block;
 	dispatch_queue_t                queue;
@@ -259,15 +270,33 @@ static OSStatus fn_queue_render(AudioObjectID device, const AudioTimeStamp *now,
 		source.delivered = 0;
 		source.bytes_per_frame = bytes_per_frame;
 
-		/* Convert into the caller's device buffer, at the offset already produced. */
+		wanted = frames - produced;
+
+		/* WHERE THE CONVERSION LANDS: the device buffer directly when the channel counts agree, and the queue's
+		 * own scratch when they do not (see the mapping below). */
 		destination = (float *)output->mBuffers[0].mData;
 		memset(&chunk, 0, sizeof(chunk));
 		chunk.mNumberBuffers = 1;
-		chunk.mBuffers[0].mNumberChannels = channels;
-		chunk.mBuffers[0].mDataByteSize = (frames - produced) * channels * (UInt32)sizeof(float);
-		chunk.mBuffers[0].mData = destination + (size_t)produced * channels;
+		if (queue->map_channels) {
+			UInt32 client_channels = queue->convert_format.mChannelsPerFrame;
 
-		wanted = frames - produced;
+			if (queue->map_capacity < frames) {
+				float *grown = realloc(queue->map_scratch, (size_t)frames * client_channels * sizeof(float));
+
+				if (grown == NULL) {
+					break;
+				}
+				queue->map_scratch = grown;
+				queue->map_capacity = frames;
+			}
+			chunk.mBuffers[0].mNumberChannels = client_channels;
+			chunk.mBuffers[0].mDataByteSize = wanted * client_channels * (UInt32)sizeof(float);
+			chunk.mBuffers[0].mData = queue->map_scratch;
+		} else {
+			chunk.mBuffers[0].mNumberChannels = channels;
+			chunk.mBuffers[0].mDataByteSize = wanted * channels * (UInt32)sizeof(float);
+			chunk.mBuffers[0].mData = destination + (size_t)produced * channels;
+		}
 		if (queue->converter != NULL) {
 			status = AudioConverterFillComplexBuffer(queue->converter, fn_queue_input, &source, &wanted, &chunk,
 			                                         NULL);
@@ -284,6 +313,34 @@ static OSStatus fn_queue_render(AudioObjectID device, const AudioTimeStamp *now,
 			memcpy(chunk.mBuffers[0].mData, (uint8_t *)source.buffer->mAudioData + queue->current_offset, bytes);
 			source.delivered = (UInt32)bytes;
 			converted = frames_to_copy;
+		}
+
+		/* THE MAPPING: a mono source reaches every device channel, a mono device receives the sum of the
+		 * source's channels over their count. Neither is a pan law, and both are what a beep expects. */
+		if (queue->map_channels && converted > 0) {
+			UInt32 client_channels = queue->convert_format.mChannelsPerFrame;
+			UInt32 frame;
+
+			for (frame = 0; frame < converted; frame++) {
+				float *out = destination + (size_t)(produced + frame) * channels;
+				const float *in = queue->map_scratch + (size_t)frame * client_channels;
+
+				if (client_channels == 1) {
+					UInt32 channel;
+
+					for (channel = 0; channel < channels; channel++) {
+						out[channel] = in[0];
+					}
+				} else {
+					float sum = 0.0f;
+					UInt32 channel;
+
+					for (channel = 0; channel < client_channels; channel++) {
+						sum += in[channel];
+					}
+					out[0] = sum / (float)client_channels;
+				}
+			}
 		}
 
 		queue->current_offset += source.delivered;
@@ -415,12 +472,30 @@ static OSStatus fn_queue_new(const AudioStreamBasicDescription *format, AudioQue
 		}
 	}
 
-	if (aq->device_format.mChannelsPerFrame != format->mChannelsPerFrame
+	/* THE MAPPING THIS QUEUE CAN DO, AND THE ONE IT CANNOT. Mono in and any number out is a fan-out and any
+	 * number in and mono out is a sum; two different counts above one would need a real channel map, which is
+	 * the converter's door and not this one's — so it is refused here, by name, instead of playing the first
+	 * channel and dropping the rest. */
+	aq->convert_format = aq->device_format;
+	aq->convert_format.mChannelsPerFrame = format->mChannelsPerFrame;
+	aq->convert_format.mBytesPerFrame = format->mChannelsPerFrame * (UInt32)sizeof(float);
+	aq->convert_format.mBytesPerPacket = aq->convert_format.mBytesPerFrame;
+
+	if (aq->device_format.mChannelsPerFrame != format->mChannelsPerFrame) {
+		if (format->mChannelsPerFrame != 1 && aq->device_format.mChannelsPerFrame != 1) {
+			pthread_mutex_destroy(&aq->lock);
+			free(aq);
+			return kAudioQueueErr_InvalidDevice;
+		}
+		aq->map_channels = true;
+	}
+
+	if (aq->map_channels
 	    || aq->device_format.mSampleRate != format->mSampleRate
 	    || format->mBitsPerChannel != 32
 	    || (format->mFormatFlags & kAudioFormatFlagIsFloat) == 0
 	    || (format->mFormatFlags & kAudioFormatFlagIsNonInterleaved) != 0) {
-		status = AudioConverterNew(format, &aq->device_format, &aq->converter);
+		status = AudioConverterNew(format, &aq->convert_format, &aq->converter);
 		if (status != 0) {
 			pthread_mutex_destroy(&aq->lock);
 			free(aq);
@@ -784,6 +859,7 @@ OSStatus AudioQueueDispose(AudioQueueRef inAQ, Boolean inImmediate)
 	if (inAQ->converter != NULL) {
 		AudioConverterDispose(inAQ->converter);
 	}
+	free(inAQ->map_scratch);
 
 	for (i = 0; i < AGORA_QUEUE_MAX_BUFFERS; i++) {
 		if (inAQ->buffer_in_use[i]) {
