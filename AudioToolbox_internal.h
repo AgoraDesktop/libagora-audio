@@ -86,7 +86,27 @@ typedef struct fn_mpeg_frame {
 	UInt32 channels;	/* 1 for single-channel mode, 2 for every other mode */
 	UInt32 samples;	/* samples per frame: 1152 for MPEG-1, 576 for MPEG-2 and 2.5 */
 	UInt32 size;	/* the frame's length in bytes, its padding included */
+	UInt32 has_crc;	/* the protection bit: a CRC adds two bytes before the side information */
 } fn_mpeg_frame;
+
+/* **THE XING/INFO TAG IS THE ONLY LENGTH AN MPEG STREAM DECLARES** — a frame count, a byte count and a 100-entry
+ * seek table, in an otherwise unindexed format. `Info` is the same tag spelled for a constant-bitrate file, and both
+ * answer here. Everything in it is optional, which is why each field has its own flag rather than a sentinel. */
+typedef struct fn_mpeg_xing {
+	bool    present;
+	bool    has_frames;
+	UInt32  frames;	/* the count in the tag: it does NOT include the frame that carries it */
+	bool    has_bytes;
+	UInt32  bytes;	/* the audio's length, the tag's own frame included */
+	bool    has_toc;
+	uint8_t toc[100];
+} fn_mpeg_xing;
+
+/* Parse the tag out of the FIRST frame of a stream. False when the frame carries none (the common case for a file
+ * cut out of a longer one, and for anything not written by LAME). */
+bool   fn_mpeg_xing_parse(const uint8_t *frame, UInt32 available, const fn_mpeg_frame *header,
+                           fn_mpeg_xing *out);
+
 
 /* Parse the header at `at` out of `available` bytes. False when those bytes are not a Layer III header this door
  * reads, or when a reserved field value says the sync word was a coincidence. */

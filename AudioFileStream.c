@@ -51,6 +51,16 @@ struct OpaqueAudioFileStreamID {
 	bool                                mpeg;
 	AudioStreamPacketDescription *      descriptions;	/* RETAINED: one per frame in the buffer, grown as needed */
 	UInt32                              description_capacity;
+
+	/* **THE XING/INFO TAG IS THE STREAM'S ONLY DECLARED LENGTH, AND IT ARRIVES WITH THE FIRST FRAME.** Until that
+	 * frame is complete the door cannot answer a packet count; after it, the count is exact without reading the
+	 * stream to its end. `has_toc` is what makes a seek to an estimated byte offset possible at all. */
+	fn_mpeg_frame                       first_frame;
+	bool                                xing_checked;
+	SInt64                              packet_count;	/* -1 until the tag says, and for a stream with none */
+	bool                                has_toc;
+	uint8_t                             toc[100];
+	SInt64                              toc_bytes;	/* the audio's length, the tag's own frame included */
 };
 
 /* ------------------------------------------------------------------------------------------------
@@ -316,7 +326,10 @@ static int fn_stream_mpeg(AudioFileStreamID stream)
 		/* Bytes per packet and per frame stay ZERO: a frame's length is in its own header. */
 
 		stream->data_offset = stream->buffer_start + (SInt64)position;
-		stream->data_bytes = -1;	/* a stream never knows how much audio is still coming */
+		stream->data_bytes = -1;	/* until the tag says; then it is exact */
+		stream->packet_count = -1;
+		stream->first_frame = frame;
+		stream->xing_checked = false;
 
 		/* The bytes before the first frame are not audio and never will be. */
 		if (position > 0) {
@@ -326,6 +339,8 @@ static int fn_stream_mpeg(AudioFileStreamID stream)
 		return 0;
 	}
 }
+
+static void fn_notify(AudioFileStreamID stream, AudioFileStreamPropertyID property);
 
 /* **A COMPRESSED STREAM IS EMITTED BY THE FRAME, BECAUSE THAT IS THE ONLY UNIT IT HAS.** Every complete frame in the
  * buffer becomes one packet, with a description saying where it starts and how many samples it holds; a frame that
@@ -350,6 +365,35 @@ static void fn_emit_mpeg(AudioFileStreamID stream)
 		}
 		if (position + frame.size > available) {
 			break;		/* incomplete: the rest of it arrives in the next call */
+		}
+
+		if (!stream->xing_checked && available >= stream->first_frame.size) {
+			fn_mpeg_xing tag;
+
+			stream->xing_checked = true;
+			if (fn_mpeg_xing_parse(stream->buffer, available, &stream->first_frame, &tag)) {
+				if (tag.has_frames) {
+					/* **THE TAG'S COUNT EXCLUDES THE FRAME THAT CARRIES IT**, which this door reports as a packet
+					 * like any other — so the packet count is one more than the tag says. Measured against the
+					 * file door on both fixtures: 116 + 1 = 117 and 79 + 1 = 80. */
+					stream->packet_count = (SInt64)tag.frames + 1;
+				}
+				if (tag.has_bytes) {
+					stream->data_bytes = (SInt64)tag.bytes;
+				}
+				if (tag.has_toc) {
+					memcpy(stream->toc, tag.toc, sizeof(stream->toc));
+					stream->has_toc = true;
+					stream->toc_bytes = tag.has_bytes ? (SInt64)tag.bytes : -1;
+				}
+
+				if (tag.has_bytes) {
+					fn_notify(stream, kAudioFileStreamProperty_AudioDataByteCount);
+				}
+				if (tag.has_frames) {
+					fn_notify(stream, kAudioFileStreamProperty_AudioDataPacketCount);
+				}
+			}
 		}
 
 		if (count == stream->description_capacity) {
@@ -689,13 +733,20 @@ OSStatus AudioFileStreamGetProperty(AudioFileStreamID inAudioFileStream,
 		return 0;
 
 	case kAudioFileStreamProperty_AudioDataPacketCount: {
-		UInt32 bytes_per_frame = fn_pcm_bytes_per_frame(&stream->asbd);
+		SInt64 packets = stream->packet_count;
 
-		if (stream->data_bytes < 0 || bytes_per_frame == 0) {
+		if (!stream->mpeg) {
+			UInt32 bytes_per_frame = fn_pcm_bytes_per_frame(&stream->asbd);
+
+			packets = (stream->data_bytes >= 0 && bytes_per_frame > 0)
+			        ? (stream->data_bytes / bytes_per_frame)
+			        : -1;
+		}
+		if (packets < 0) {
 			return kAudioFileStreamError_ValueUnknown;
 		}
 		if (*ioPropertyDataSize < sizeof(UInt64)) { return kAudioFileStreamError_BadPropertySize; }
-		*(UInt64 *)outPropertyData = (UInt64)(stream->data_bytes / bytes_per_frame);
+		*(UInt64 *)outPropertyData = (UInt64)packets;
 		*ioPropertyDataSize = sizeof(UInt64);
 		return 0;
 	}
@@ -734,16 +785,43 @@ OSStatus AudioFileStreamSetProperty(AudioFileStreamID inAudioFileStream,
 OSStatus AudioFileStreamSeek(AudioFileStreamID inAudioFileStream, SInt64 inPacketOffset,
                              SInt64 *outDataByteOffset, AudioFileStreamSeekFlags *outFlags)
 {
-	(void)inPacketOffset;
-	(void)outDataByteOffset;
-	(void)outFlags;
+	AudioFileStreamID stream = inAudioFileStream;
+	UInt32 index;
+	SInt64 offset;
 
-	if (inAudioFileStream == NULL) {
+	if (stream == NULL || outDataByteOffset == NULL || outFlags == NULL) {
 		return kAudio_ParamError;
 	}
 
-	/* A seek in a stream needs the packet table, which is what makes the byte offset of packet N knowable
-	 * without reading everything before it. Linear PCM has no such table — every packet is the same size —
-	 * and the byte offset is arithmetic the caller can do. */
-	return kAudioFileStreamError_IllegalOperation;
+	*outFlags = 0;
+
+	/* **PACKET ZERO IS A POSITION THIS DOOR KNOWS EXACTLY**, because it is where the audio starts. */
+	if (inPacketOffset == 0) {
+		*outDataByteOffset = stream->data_offset;
+		return 0;
+	}
+
+	/* A seek in a stream needs an index of what has not been read yet, and the tag's 100-entry table is the only
+	 * one an MPEG stream carries. Linear PCM has no such table — every packet is the same size — and its byte
+	 * offset is arithmetic the caller can do; a file with no tag is a stream nobody has indexed. */
+	if (!stream->has_toc || stream->packet_count <= 0 || stream->toc_bytes <= 0) {
+		return kAudioFileStreamError_IllegalOperation;
+	}
+	if (inPacketOffset < 0 || inPacketOffset >= stream->packet_count) {
+		return kAudioFileStreamError_InvalidPacketOffset;
+	}
+
+	/* **THE TABLE IS A PERCENTAGE OF THE AUDIO, NOT A PACKET INDEX**, so the answer is interpolated: packet N of P
+	 * is at N/P of the way, the table's entry for that hundredth is at `toc[i]/256` of the audio's bytes. It is an
+	 * estimate — that is what the flag is for — and the caller re-feeds from the offset it names, where this door
+	 * resynchronises on the first frame it finds. */
+	index = (UInt32)((inPacketOffset * 100) / stream->packet_count);
+	if (index > 99) {
+		index = 99;
+	}
+	offset = stream->toc_bytes * (SInt64)stream->toc[index] / 256;
+
+	*outDataByteOffset = stream->data_offset + offset;
+	*outFlags = kAudioFileStreamSeekFlag_OffsetIsEstimated;
+	return 0;
 }

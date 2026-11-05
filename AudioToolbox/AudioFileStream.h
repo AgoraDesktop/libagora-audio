@@ -21,8 +21,11 @@
  * packet arrives with an `AudioStreamPacketDescription` saying where it starts, how big it is and how many samples
  * it holds. That is the difference a caller has to handle, and it is Apple's, not this implementation's.
  *
- * `AudioFileStreamSeek` is declared and refuses: seeking a stream needs the packet table, and a stream being fed
- * has no index of what it has not yet seen.
+ * **`AudioFileStreamSeek` ANSWERS ONLY WHEN SOMETHING INDEXES THE STREAM.** An MPEG stream's Xing/Info tag carries a
+ * hundred-entry table, so a packet's byte offset is an interpolation of it — exact for packet zero, an estimate
+ * otherwise, which is what `kAudioFileStreamSeekFlag_OffsetIsEstimated` exists to say. A PCM stream and an MPEG one
+ * with no tag are refused with `kAudioFileStreamError_IllegalOperation`: a stream being fed has no index of what it has
+ * not yet seen, and inventing one would put a caller at an arbitrary byte in the middle of a frame.
  */
 #ifndef AGORA_AUDIOTOOLBOX_AUDIOFILESTREAM_H
 #define AGORA_AUDIOTOOLBOX_AUDIOFILESTREAM_H

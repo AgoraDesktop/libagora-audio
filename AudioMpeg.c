@@ -97,6 +97,10 @@ bool fn_mpeg_frame_header(const uint8_t *data, UInt32 available, UInt32 at, fn_m
 	out->channels = (mode == 3) ? 1 : 2;	/* mode 3 is single-channel; every other mode is two */
 	out->samples = samples;
 	out->size = (UInt32)length;
+	/* **THE PROTECTION BIT IS INVERTED**: zero means a CRC is present, one means it is not — the opposite of every
+	 * flag a reader has met before it. It moves the Xing tag two bytes, which is how a wrong guess here reads as
+	 * "this file declares no length". */
+	out->has_crc = (b1 & 0x01) ? 0 : 1;
 	return true;
 }
 
@@ -148,4 +152,74 @@ UInt32 fn_mpeg_packet_size_upper_bound(const AudioStreamBasicDescription *asbd)
 	      ? (UInt32)(144u * 320000u / rate) + 1u
 	      : (UInt32)( 72u * 160000u / rate) + 1u;
 	return bound;
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * The Xing/Info tag: the only place an MPEG audio stream says how long it is.
+ * ---------------------------------------------------------------------------------------------- */
+
+/* **THE TAG SITS AFTER THE SIDE-INFORMATION BLOCK, WHOSE SIZE IS THE VERSION AND THE CHANNEL MODE.** MPEG-1 stereo
+ * carries 32 bytes of it, MPEG-1 mono 17, MPEG-2 and 2.5 stereo 17 and mono 9, and a CRC-protected frame has two more
+ * bytes in front of all of them. Getting this arithmetic wrong is not a subtle failure: the tag is simply not found,
+ * and the stream reports an unknown length for a file that declared one. */
+static UInt32 fn_mpeg_xing_offset(const fn_mpeg_frame *header)
+{
+	UInt32 side = (header->version == 3) ? ((header->channels == 1) ? 17u : 32u)
+	                                     : ((header->channels == 1) ?  9u : 17u);
+
+	return 4u + (header->has_crc ? 2u : 0u) + side;
+}
+
+static UInt32 fn_mpeg_rd32be(const uint8_t *p)
+{
+	return ((UInt32)p[0] << 24) | ((UInt32)p[1] << 16) | ((UInt32)p[2] << 8) | (UInt32)p[3];
+}
+
+bool fn_mpeg_xing_parse(const uint8_t *frame, UInt32 available, const fn_mpeg_frame *header,
+                         fn_mpeg_xing *out)
+{
+	UInt32 at = fn_mpeg_xing_offset(header);
+	UInt32 flags;
+	UInt32 cursor;
+
+	if (frame == NULL || header == NULL || out == NULL) {
+		return false;
+	}
+	memset(out, 0, sizeof(*out));
+
+	if (available < at + 8) {
+		return false;
+	}
+	if (memcmp(frame + at, "Xing", 4) == 0) {
+		out->present = true;
+	} else if (memcmp(frame + at, "Info", 4) == 0) {
+		/* **`Info` IS THE SAME TAG IN A CONSTANT-BITRATE FILE**: LAME writes it there for the frame count and the
+		 * gapless declaration, not because the bitrate varies. Both spellings answer the same questions. */
+		out->present = true;
+	} else {
+		return false;
+	}
+
+	flags = fn_mpeg_rd32be(frame + at + 4);
+	cursor = at + 8;
+
+	if ((flags & 1u) && available >= cursor + 4) {
+		out->frames = fn_mpeg_rd32be(frame + cursor);
+		out->has_frames = true;
+	}
+	cursor += (flags & 1u) ? 4u : 0u;
+
+	if ((flags & 2u) && available >= cursor + 4) {
+		out->bytes = fn_mpeg_rd32be(frame + cursor);
+		out->has_bytes = true;
+	}
+	cursor += (flags & 2u) ? 4u : 0u;
+
+	if ((flags & 4u) && available >= cursor + 100) {
+		memcpy(out->toc, frame + cursor, sizeof(out->toc));
+		out->has_toc = true;
+	}
+	/* The quality field (flag 8) is not read: it is an encoder's own opinion, and nothing here decides anything
+	 * with it. */
+	return true;
 }

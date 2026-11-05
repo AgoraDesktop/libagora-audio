@@ -121,11 +121,21 @@ time or a buffer at a time, `tests/mp3.c` compares every packet against the file
 byte for byte, with the audio's offset correctly past ffmpeg's own tag and past a synthetic one whose 200 bytes of
 0xFF filler are the sync words a naive walker would index as audio.
 
+**A stream also knows how long it is, as soon as it has seen one frame.** The first frame can carry a Xing or Info
+tag — the same tag, spelled for a variable- or constant-bitrate file — holding a frame count, a byte count and a
+hundred-entry seek table, and `AudioMpeg.c` reads it out from after the side information, whose size depends on the
+version and the channel mode. From the first 4 KiB of the file the door answers `AudioDataPacketCount` and
+`AudioDataByteCount` exactly, and `AudioFileStreamSeek` returns a byte offset: exact for packet zero, and an
+interpolation of the table's hundredths otherwise, flagged `kAudioFileStreamSeekFlag_OffsetIsEstimated` because that is
+what it is. A stream whose first frame is not the tag — a file cut out of a longer one — has no table, and the door says
+so: `ValueUnknown` for the count and `kAudioFileStreamError_IllegalOperation` for the seek.
+
 Two limits are worth naming. Writing is refused: there is no encoder, and `AudioFileCreateWithURL` answers
-`kAudioFileUnsupportedFileTypeError` for `kAudioFileMP3Type`. And a stream reports no packet count — an MP3 carries one
-only in a Xing/LAME header, which this door does not parse — so `kAudioFileStreamProperty_AudioDataPacketCount` answers
-`ValueUnknown` for it, while the file door knows the count exactly. The fixtures the suite reads are `ffmpeg`'s output,
-written when the suite is configured; with no `ffmpeg` the test reports a skip instead of disappearing.
+`kAudioFileUnsupportedFileTypeError` for `kAudioFileMP3Type`. And the tag's own gapless declaration — the encoder delay
+and padding it records next to the count — is not applied: the counts here are the container's, which are larger than
+the audio the decoder produces, exactly as the file door's are (see the seek paragraph above). The fixtures the suite
+reads are `ffmpeg`'s output, written when the suite is configured; with no `ffmpeg` the test reports a skip instead of
+disappearing.
 
 **Phase 6a — sndio, the BSDs' server: WRITTEN, COMPILED HERE, NOT MEASURED HERE.** `AudioHardware-sndio.c` is
 the fourth backend and the one this tree cannot exercise where it is developed: `libsndio-dev` 1.10.0 is

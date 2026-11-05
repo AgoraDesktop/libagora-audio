@@ -713,6 +713,221 @@ static int fn_stream_parse(const char *path, double rate, UInt32 channels, UInt3
 	return (status == 0 && state.mismatches == 0) ? 0 : 1;
 }
 
+/* ------------------------------------------------------------------------------------------------
+ * The Xing/Info tag: the length a stream declares before it has been read.
+ *
+ * **A PLAYER WANTS THE DURATION OF A SONG IT HAS NOT DOWNLOADED, AND THIS IS WHERE AN MP3 KEEPS IT.** The tag is
+ * inside the first frame — after the side information, whose size depends on the version and the channel mode — and
+ * it holds a frame count, a byte count and a 100-entry seek table. Everything below is asked of a stream that has
+ * been fed the first 4 KiB of the file and no more, which is the only interesting case.
+ * ---------------------------------------------------------------------------------------------- */
+
+/* The exact file offset of every packet, from the file door, read in one pass. */
+typedef struct {
+	UInt8 *                        bytes;		/* RETAINED: every packet, concatenated */
+	AudioStreamPacketDescription * descriptions;	/* RETAINED: one per packet, offsets from `bytes` */
+	UInt32                         packets;
+	SInt64                         data_offset;
+	SInt64                         audio_bytes;
+} fn_table;
+
+static bool fn_table_build(const char *path, AudioFileID *out_file, fn_table *table)
+{
+	AudioFileID file = NULL;
+	UInt32 capacity;
+	UInt32 packets = 0;
+	UInt8 *bytes;
+	AudioStreamPacketDescription *descriptions;
+	CFURLRef url = fn_url(path);
+	long file_size;
+
+	memset(table, 0, sizeof(*table));
+
+	if (AudioFileOpenURL(url, kAudioFileReadPermission, 0, &file) != 0) {
+		CFRelease(url);
+		return false;
+	}
+	CFRelease(url);
+
+	/* Both counts are 64-bit in this door (Apple's are), so the sizes are the answer's, not a guess. */
+	{
+		UInt64 value = 0;
+		SInt64 offset = 0;
+
+		capacity = sizeof(value);
+		if (AudioFileGetProperty(file, kAudioFilePropertyAudioDataByteCount, &capacity, &value) == 0) {
+			table->audio_bytes = (SInt64)value;
+		}
+		capacity = sizeof(offset);
+		if (AudioFileGetProperty(file, kAudioFilePropertyDataOffset, &capacity, &offset) == 0) {
+			table->data_offset = offset;
+		}
+		capacity = sizeof(value);
+		if (AudioFileGetProperty(file, kAudioFilePropertyAudioDataPacketCount, &capacity, &value) == 0) {
+			table->packets = (UInt32)value;
+		}
+	}
+	if (table->packets == 0) {
+		AudioFileClose(file);
+		return false;
+	}
+
+	file_size = (long)table->audio_bytes;
+	bytes = malloc((size_t)file_size);
+	descriptions = calloc(table->packets, sizeof(*descriptions));
+	if (bytes == NULL || descriptions == NULL) {
+		free(bytes);
+		free(descriptions);
+		AudioFileClose(file);
+		return false;
+	}
+
+	capacity = (UInt32)file_size;
+	packets = table->packets;
+	if (AudioFileReadPacketData(file, false, &capacity, descriptions, 0, &packets, bytes) != 0
+	    || packets != table->packets) {
+		free(bytes);
+		free(descriptions);
+		AudioFileClose(file);
+		return false;
+	}
+
+	table->bytes = bytes;
+	table->descriptions = descriptions;
+	*out_file = file;
+	return true;
+}
+
+static int fn_stream_tag(const char *path)
+{
+	AudioFileID file = NULL;
+	AudioFileStreamID stream = NULL;
+	fn_table table;
+	fn_stream_state state;
+	UInt8 *raw = NULL;
+	UInt32 prefix = 4096;
+	SInt64 exact;
+	OSStatus status;
+
+	printf("— %s, the tag in the first %u bytes\n", path, prefix);
+
+	if (!fn_table_build(path, &file, &table)) {
+		printf("skip  no usable fixture at %s\n", path);
+		return 77;
+	}
+	AudioFileClose(file);
+
+	{
+		FILE *handle = fopen(path, "rb");
+
+		if (handle == NULL) {
+			free(table.bytes);
+			free(table.descriptions);
+			return 77;
+		}
+		raw = malloc(prefix);
+		if (raw == NULL || fread(raw, 1, prefix, handle) != prefix) {
+			free(raw);
+			fclose(handle);
+			free(table.bytes);
+			free(table.descriptions);
+			return 77;
+		}
+		fclose(handle);
+	}
+
+	memset(&state, 0, sizeof(state));
+	status = AudioFileStreamOpen(&state, fn_stream_property, fn_stream_packets, 0, &stream);
+	if (status == 0) {
+		status = AudioFileStreamParseBytes(stream, prefix, raw, 0);
+	}
+	fn_check("a stream fed one frame has parsed its tag", status == 0);
+
+	{
+		UInt64 packets = 0;
+		UInt64 bytes = 0;
+		UInt32 size = sizeof(packets);
+
+		fn_check("the tag gives the packet count before the stream has been read",
+		         AudioFileStreamGetProperty(stream, kAudioFileStreamProperty_AudioDataPacketCount, &size,
+		                                    &packets) == 0
+		         && packets == (UInt64)table.packets);
+		size = sizeof(bytes);
+		fn_check("the tag gives the byte count",
+		         AudioFileStreamGetProperty(stream, kAudioFileStreamProperty_AudioDataByteCount, &size, &bytes) == 0
+		         && bytes == (UInt64)table.audio_bytes);
+	}
+
+	/* **THE SEEK IS AN ESTIMATE, AND THE FLAG SAYS SO.** Packet 0 is a position this door knows exactly; the rest
+	 * come from the table's hundredths, so they are compared against the file door's exact offsets with a
+	 * tolerance of one table entry. */
+	{
+		static const double fractions[] = { 0.0, 0.25, 0.5, 0.9, 1.0 };
+		UInt32 i;
+
+		for (i = 0; i < sizeof(fractions) / sizeof(fractions[0]); i++) {
+			SInt64 packet = (SInt64)((double)(table.packets - 1) * fractions[i] + 0.5);
+			SInt64 predicted = 0;
+			AudioFileStreamSeekFlags flags = 0;
+			SInt64 tolerance = (packet == 0) ? 0 : table.audio_bytes / 50;
+			OSStatus seek_status;
+
+			exact = table.data_offset + table.descriptions[packet].mStartOffset;
+			seek_status = AudioFileStreamSeek(stream, packet, &predicted, &flags);
+			printf("      packet %lld: seek says %lld, the file says %lld (flags 0x%x)\n",
+			       (long long)packet, (long long)predicted, (long long)exact, (unsigned)flags);
+			fn_check("the seek answers for an MPEG stream", seek_status == 0);
+			fn_check("the seek's offset finds the packet, or is within one table entry of it",
+			         llabs((long long)(predicted - exact)) <= (long long)tolerance);
+			fn_check("the seek flags the offset as estimated unless it is packet zero",
+			         (packet == 0) ? (flags == 0) : (flags == kAudioFileStreamSeekFlag_OffsetIsEstimated));
+		}
+
+		{
+			SInt64 predicted = 0;
+			AudioFileStreamSeekFlags flags = 0;
+
+			fn_check("a packet past the end is refused by name",
+			         AudioFileStreamSeek(stream, (SInt64)table.packets + 5, &predicted, &flags)
+			         == kAudioFileStreamError_InvalidPacketOffset);
+		}
+	}
+
+	AudioFileStreamClose(stream);
+
+	/* **A FILE WHOSE FIRST FRAME IS NOT THE TAG HAS NO TABLE AT ALL**, which is what a file cut out of a longer one
+	 * looks like: the count is unknown and the seek refuses, rather than answering from an estimate nobody made. */
+	{
+		SInt64 predicted = 0;
+		AudioFileStreamSeekFlags flags = 0;
+		UInt64 packets = 0;
+		UInt32 size = sizeof(packets);
+		/* The first frame starts at the data offset, not at byte zero: the fixture carries a tag of its own. */
+		UInt32 skip = (UInt32)(table.data_offset + table.descriptions[0].mStartOffset
+		                       + table.descriptions[0].mDataByteSize);
+		UInt32 available = prefix - skip;
+
+		memset(&state, 0, sizeof(state));
+		status = AudioFileStreamOpen(&state, fn_stream_property, fn_stream_packets, 0, &stream);
+		if (status == 0) {
+			status = AudioFileStreamParseBytes(stream, available, raw + skip, 0);
+		}
+		printf("      entering at byte %u of the file: %u bytes, status %d\n", skip, available, (int)status);
+		fn_check("a stream entering mid-file still parses", status == 0);
+		fn_check("a stream with no tag has no packet count",
+		         AudioFileStreamGetProperty(stream, kAudioFileStreamProperty_AudioDataPacketCount, &size, &packets)
+		         == kAudioFileStreamError_ValueUnknown);
+		fn_check("a stream with no table refuses a seek",
+		         AudioFileStreamSeek(stream, 10, &predicted, &flags) == kAudioFileStreamError_IllegalOperation);
+		AudioFileStreamClose(stream);
+	}
+
+	free(raw);
+	free(table.bytes);
+	free(table.descriptions);
+	return 0;
+}
+
 /* The refusals, each by name, because a format that is read is not a format that is written, and because a file
  * that only looks like one must not be accepted. */
 static int fn_refusals(void)
@@ -793,6 +1008,11 @@ int main(int argc, char **argv)
 			fn_seek(argv[1], 44100.0, 2, 440.0, 3.0);
 		}
 		fn_refusals();
+	}
+
+	if (skipped < 2) {
+		fn_stream_tag(argv[1]);
+		fn_stream_tag(argv[2]);
 	}
 
 	printf("\n%d check(s), %d failure(s)\n", fn_total, fn_failures);
