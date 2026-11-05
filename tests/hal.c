@@ -444,14 +444,20 @@ static void fn_test_clock(void)
  *
  * THE NULL DEVICE HEARS A RAMP, SO THIS IS MEASURABLE WITHOUT A MICROPHONE. Frame `n` of the device's life is
  * `(n % rate) / rate` on the left and half that on the right, so "the io proc was given the device's input" is one
- * subtraction: consecutive frames step by 1/48000, and a dropped or duplicated frame is a step that is not. Only the
- * null backend describes an input, so the other legs say so and move on.
+ * subtraction: consecutive frames step by 1/48000, and a dropped or duplicated frame is a step that is not.
+ *
+ * THE ALSA LEG CAN ONLY MEASURE DELIVERY, AND SAYS SO. Its `null` PCM opens for capture and returns the full quantum
+ * every cycle, but every sample is 0.0 — a plugin recording silence is not a defect, and a suite that demanded a ramp
+ * there would be demanding the fixture of a different backend. So the values are asserted on the backend that owns a
+ * known source, and the shape (a stream, a direction, a cycle's worth of frames) is asserted on both. `pipewire` and
+ * `sndio` open no capture stream yet, so they say so and move on.
  * ---------------------------------------------------------------------------------------------- */
 
 typedef struct {
 	int    calls;
 	UInt32 frames;
 	bool   saw_input;
+	bool   check_ramp;	/* the null backend's ramp is the only source this suite knows */
 	bool   ramp;		/* every consecutive pair stepped up the ramp (a wrap is allowed) */
 	bool   half_right;	/* the right channel is half the left, in the same frame */
 } input_watch;
@@ -486,6 +492,11 @@ static OSStatus fn_watch_input(AudioObjectID device, const AudioTimeStamp *now, 
 	watch->calls++;
 	watch->frames = frames;
 	watch->saw_input = true;
+
+	if (!watch->check_ramp) {
+		return 0;
+	}
+
 	watch->half_right = watch->half_right && (samples[1] == samples[0] * 0.5f);
 
 	for (i = 1; i < frames; i++) {
@@ -511,12 +522,15 @@ static void fn_test_input_device(void)
 	AudioDeviceID input = kAudioObjectUnknown;
 	UInt32 size = sizeof(input);
 
-	if (strcmp(g_driver, "null") != 0) {
+	bool can_capture = strcmp(g_driver, "null") == 0 || strcmp(g_driver, "alsa") == 0;
+
+	if (!can_capture) {
 		printf("      input: the %s backend opens no capture stream, so there is nothing to measure\n", g_driver);
 		return;
 	}
 
 	memset(&watch, 0, sizeof(watch));
+	watch.check_ramp = strcmp(g_driver, "null") == 0;
 	watch.ramp = true;
 	watch.half_right = true;
 
@@ -552,9 +566,16 @@ static void fn_test_input_device(void)
 	fn_check("the input device starts", AudioDeviceStart(input, NULL) == 0);
 	fn_sleep_ms(150);
 	fn_check("the io proc is handed the device's input", watch.calls > 0 && watch.saw_input);
-	fn_check("the input is the device's ramp, in order and without a gap", watch.ramp);
-	fn_check("the input's two channels are not the same signal", watch.half_right);
-	printf("      input: %d calls of %u frames\n", watch.calls, (unsigned)watch.frames);
+	fn_check("a cycle of input is the device's quantum", !g_exact_numbers || watch.frames == 512);
+	if (watch.check_ramp) {
+		fn_check("the input is the device's ramp, in order and without a gap", watch.ramp);
+		fn_check("the input's two channels are not the same signal", watch.half_right);
+		printf("      input: %d calls of %u frames, the null backend's ramp\n", watch.calls,
+		       (unsigned)watch.frames);
+	} else {
+		printf("      input: %d calls of %u frames, delivered (this PCM chooses the samples)\n", watch.calls,
+		       (unsigned)watch.frames);
+	}
 	fn_check("the input device stops", AudioDeviceStop(input, NULL) == 0);
 	fn_check("the io proc is destroyed", AudioDeviceDestroyIOProcID(input, proc) == 0);
 }

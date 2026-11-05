@@ -54,11 +54,12 @@ ExtAudioFile.c           format and rate conversion inside the file door
 AudioFileStream.c        incremental parsing, with a listener and a packet callback
 AudioHardware.c          the object table, the property switch, the listeners, the mixer
 AudioHardware-null.c     one device that exists everywhere, with a real data thread
-AudioHardware-alsa.c     the second backend: `snd_pcm_open` on a name, paced by its own writes
+AudioHardware-alsa.c     the second backend: `snd_pcm_open` on a name, paced by its own writes,
+                         and recording from the same name when that PCM can record
 AudioHardware-pipewire.c the third: the session's own server, its sinks, and one stream per started device
 AudioHardware-sndio.c    the fourth: the BSDs' sound server (written and compiled; not measured here)
 AudioHardwareDeprecated.c  the pre-10.7 doors, translated into the object API
-AudioQueue.c             buffers in, played frames out, over the device layer
+AudioQueue.c             buffers in, played frames out — and the same object filled from the device
 AudioServices.c          a file and a number; the alert is generated, not vendored
 AudioUnit.c              the registry of three, and the three units behind it
 AudioGraph.c             nodes, connections, and the pull that goes down them
@@ -194,14 +195,23 @@ hands it to every io proc as its `inInputData` (read-only: it is the microphone,
 cycle), and the null device — the one every build has — describes an input stream and *hears a ramp*: frame `n` of its
 life is `(n % rate) / rate` on the left and half that on the right. A ramp rather than a tone because the question a
 capture test asks is not "is this audio" but "are these the frames, in this order, without a gap", and one subtraction
-answers it. The other three drivers open no capture stream yet, so `AudioQueueNewInput` on them answers
-`kAudioQueueErr_InvalidDevice` — honestly, and by name.
+answers it.
 
-Still to come: capture in the real backends (`snd_pcm_open(..., SND_PCM_STREAM_CAPTURE)`, a `PW_DIRECTION_INPUT`
-stream, `sio_open(..., SIO_REC, 0)` — the HAL and the queue are ready for them, and the null device is what a test can
-measure until one exists), `AUGraph` sub-graphs (their Carbon doors are not declared), and `AudioFormat`'s
-`kAudioFormatProperty_FormatList` (the constant is in the manifest but its specifier's shape is not, so the door stays
-refused rather than guessed). `../AUDIO-PLAN.md` §9 is the schedule and §6 the header-by-header commitment.
+**ALSA records from the same PCM it plays to, and asks for the two directions separately.** `fn_alsa_capture_opens` is
+a real `snd_pcm_open(SND_PCM_STREAM_CAPTURE)` probe — cached, like the playback one — and the driver opens, configures
+and prepares a capture handle with the same format, channels and rate. The data thread reads *before* it asks the mixer
+for output, so both directions are one cycle of one device; a short read (an xrun) leaves that cycle without input
+rather than handing io procs a buffer half-filled with the last one, and capture is optional throughout — a PCM that
+plays but cannot record, or grants another rate, leaves playback alone. MEASURED here: on ALSA's `null` PCM capture
+opens and returns the full quantum every cycle with every sample 0.0, because that plugin records silence; on this
+machine's `default` PCM it returns **14 cycles of 512 frames in 150 ms** — the card's own clock — with the card's own
+samples. That is why the ALSA leg of the suite asserts *delivery* and the null backend asserts *values*.
+
+Still to come: capture in the other two drivers (a `PW_DIRECTION_INPUT` stream and `sio_open(..., SIO_REC, 0)` — the HAL
+and the queue are ready for them, and they answer `kAudioQueueErr_InvalidDevice` until then, honestly and by name),
+`AUGraph` sub-graphs (their Carbon doors are not declared), and `AudioFormat`'s `kAudioFormatProperty_FormatList` (the
+constant is in the manifest but its specifier's shape is not, so the door stays refused rather than guessed).
+`../AUDIO-PLAN.md` §9 is the schedule and §6 the header-by-header commitment.
 
 The three PCM containers are ours rather than a library's: WAV is a little-endian chunk list, AIFF is a
 big-endian one with an 80-bit sample rate, and CAF is a big-endian chunk list with a 64-bit size. MPEG audio is
@@ -307,10 +317,12 @@ skips, exit 77, when there is none):
   the io procs are called) and skips the numbers the server chooses — rate, quantum, channel count, pacing —
   with the suite naming which of the two it is measuring. **A fourth leg is the same suite on `sndio`**, and on
   this machine it reports the honest thing: `hal-sndio` skips (77), because the backend is compiled against
-  libsndio 1.10.0 and no `sndiod` is listening. **The input side is measured on the null leg only**, because only that
-  driver describes a capture stream: a default input device exists, it has one input-scope stream whose
-  `kAudioStreamPropertyDirection` says input, and an io proc on it is handed the device's ramp as `inInputData` — every
-  consecutive pair of frames one ramp step apart, so a dropped or duplicated frame fails the assertion.
+  libsndio 1.10.0 and no `sndiod` is listening. **The input side is measured on the null and ALSA legs**, because those
+  are the two drivers that describe a capture stream: a default input device exists, it has one input-scope stream
+  whose `kAudioStreamPropertyDirection` says input, and an io proc on it is handed a cycle of the device's input as
+  `inInputData`. On the null backend the samples are the device's ramp — every consecutive pair one step apart, so a
+  dropped or duplicated frame fails the assertion — and on ALSA the plugin or card chooses them, so that leg measures
+  delivery and says so.
 - **`unit`** — the registry finds a built-in and does not invent a fourth; an output unit with a callback
   renders 0.5 and the device measures it; a converter turns int16 0.25 into float32 0.25; a two-bus mixer sums
   0.25 + 0.125 to **0.375**, and halving one bus's volume halves its contribution; and a graph of mixer → output

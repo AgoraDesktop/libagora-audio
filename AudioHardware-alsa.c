@@ -15,6 +15,15 @@
  * the mixer is asked for exactly what the device can take and no timer is involved: the device's clock is the
  * clock, which is why this backend's frames-per-second assertion is not made in the suite (see `hal.c`).
  *
+ * IT RECORDS FROM THE SAME PCM WHEN THAT PCM CAN RECORD. ALSA is one device with two directions, and the two are
+ * asked for separately: `snd_pcm_open(SND_PCM_STREAM_CAPTURE)` on the same name, configured with the same format, and
+ * read *before* the mixer is asked for output so that the two directions stay on one cycle. Capture is optional —
+ * a PCM that plays but cannot record (or grants a different rate) leaves the output alone and passes no input, which
+ * is the difference between a desktop that cannot record and one that cannot make a sound. MEASURED on ALSA's `null`
+ * PCM: capture opens, `snd_pcm_readi` returns the full quantum every cycle and every sample is 0.0, because that
+ * plugin records silence — so the ALSA leg of the suite measures *delivery*, and the value assertion is the null
+ * backend's (which hears a ramp).
+ *
  * A BLOCK THAT IS NOT COMPILED WHEN ALSA IS NOT THERE: `AGORA_WITH_ALSA` is set by the build when
  * `pkg-config alsa` finds the library, and the driver provider answers NULL otherwise so the HAL falls back
  * to the null backend instead of failing to link.
@@ -41,7 +50,8 @@ typedef struct {
 	bool           quit;
 	pthread_t      thread;
 	AudioDeviceID  device;
-	snd_pcm_t *    pcm;
+	snd_pcm_t *    playback;
+	snd_pcm_t *    capture;		/* NULL when this PCM cannot record, or grants another rate */
 	UInt32         frames;
 	UInt32         channels;
 	UInt32         rate;
@@ -79,6 +89,27 @@ static bool fn_alsa_probe(void)
 	return probed == 1;
 }
 
+/* Whether this PCM can record, asked the same way the playback probe asks: a real open, cached, because an open is
+ * not free and `AGORA_AUDIO_ALSA_PCM` is read once. A PCM that plays and cannot record is a real device, so the two
+ * answers are independent. */
+static bool fn_alsa_capture_opens(void)
+{
+	static int probed = -1;
+
+	if (probed < 0) {
+		const char *name = getenv("AGORA_AUDIO_ALSA_PCM");
+		const char *pcm_name = (name != NULL && name[0] != '\0') ? name : "default";
+		snd_pcm_t *pcm = NULL;
+
+		probed = (snd_pcm_open(&pcm, pcm_name, SND_PCM_STREAM_CAPTURE, SND_PCM_NONBLOCK) == 0) ? 1 : 0;
+		if (pcm != NULL) {
+			snd_pcm_close(pcm);
+		}
+	}
+
+	return probed == 1;
+}
+
 static UInt32 fn_alsa_device_count(void)
 {
 	return fn_alsa_probe() ? 1 : 0;
@@ -98,39 +129,90 @@ static bool fn_alsa_device_describe(UInt32 index, agora_device_desc *out)
 	out->nominal_rate = 48000.0;
 	out->buffer_frames = 512;
 	out->channels = 2;
-	out->has_input = false;
+	out->has_input = fn_alsa_capture_opens();
 	out->has_output = true;
 	out->terminal_type = kAudioStreamTerminalTypeSpeaker;
 
 	return true;
 }
 
+/* Configure an opened PCM for the engine's format, and prepare it. The rate and the quantum are in/out because the
+ * device may not grant what was asked — and the temporaries are not decoration: a `snd_pcm_uframes_t` is
+ * `unsigned long`, so handing ALSA the address of a `UInt32` field writes eight bytes into a four-byte slot. */
+static bool fn_alsa_configure(snd_pcm_t *pcm, UInt32 channels, UInt32 *rate, UInt32 *frames)
+{
+	snd_pcm_hw_params_t *params = NULL;
+	unsigned int granted_rate = *rate;
+	snd_pcm_uframes_t granted_period = *frames;
+	bool ok;
+
+	snd_pcm_hw_params_alloca(&params);
+
+	ok = snd_pcm_hw_params_any(pcm, params) >= 0
+	  && snd_pcm_hw_params_set_access(pcm, params, SND_PCM_ACCESS_RW_INTERLEAVED) >= 0
+	  && snd_pcm_hw_params_set_format(pcm, params, SND_PCM_FORMAT_FLOAT_LE) >= 0
+	  && snd_pcm_hw_params_set_channels(pcm, params, channels) >= 0
+	  && snd_pcm_hw_params_set_rate_near(pcm, params, &granted_rate, 0) >= 0
+	  && snd_pcm_hw_params_set_period_size_near(pcm, params, &granted_period, 0) >= 0
+	  && snd_pcm_hw_params(pcm, params) >= 0;
+
+	if (!ok) {
+		return false;
+	}
+
+	*rate = granted_rate;
+	*frames = (UInt32)granted_period;
+
+	return snd_pcm_prepare(pcm) >= 0;
+}
+
 static void *fn_alsa_thread(void *argument)
 {
 	alsa_engine *engine = argument;
-	float *mix = malloc((size_t)engine->frames * engine->channels * sizeof(float));
+	size_t samples = (size_t)engine->frames * engine->channels;
+	float *mix = malloc(samples * sizeof(float));
+	float *input = malloc(samples * sizeof(float));
 
-	if (mix == NULL) {
+	if (mix == NULL || input == NULL) {
+		free(mix);
+		free(input);
 		return NULL;
 	}
 
 	while (!engine->quit) {
+		const float *capture = NULL;
 		snd_pcm_sframes_t written;
 
-		fn_agora_device_render(engine->device, NULL, mix, engine->frames);
+		/* **THE INPUT IS READ BEFORE THE MIXER IS ASKED FOR OUTPUT.** Both directions are one cycle of one device,
+		 * so the cycle starts with what the device has already heard; a short read (an xrun, a signal) leaves this
+		 * cycle without input rather than handing the HAL a buffer half-filled with the last one. */
+		if (engine->capture != NULL) {
+			snd_pcm_sframes_t heard = snd_pcm_readi(engine->capture, input,
+			                                        (snd_pcm_uframes_t)engine->frames);
 
-		written = snd_pcm_writei(engine->pcm, mix, (snd_pcm_uframes_t)engine->frames);
+			if (heard == (snd_pcm_sframes_t)engine->frames) {
+				capture = input;
+			} else if (heard < 0) {
+				if (heard == -EPIPE || heard == -ESTRPIPE) {
+					snd_pcm_prepare(engine->capture);
+				}
+			}
+		}
+
+		fn_agora_device_render(engine->device, capture, mix, engine->frames);
+
+		written = snd_pcm_writei(engine->playback, mix, (snd_pcm_uframes_t)engine->frames);
 		if (written < 0) {
 			/* An underrun is normal after a scheduling hiccup; a dead device is not. */
 			if (written == -EPIPE) {
-				snd_pcm_prepare(engine->pcm);
+				snd_pcm_prepare(engine->playback);
 				continue;
 			}
 			if (written == -ESTRPIPE) {
-				while (snd_pcm_resume(engine->pcm) == -EAGAIN) {
+				while (snd_pcm_resume(engine->playback) == -EAGAIN) {
 					/* wait until the device comes back */
 				}
-				snd_pcm_prepare(engine->pcm);
+				snd_pcm_prepare(engine->playback);
 				continue;
 			}
 			break;
@@ -138,6 +220,7 @@ static void *fn_alsa_thread(void *argument)
 	}
 
 	free(mix);
+	free(input);
 	return NULL;
 }
 
@@ -149,8 +232,6 @@ static bool fn_alsa_start(AudioDeviceID id)
 
 	if (!g_alsa.running) {
 		const char *name = getenv("AGORA_AUDIO_ALSA_PCM");
-		snd_pcm_hw_params_t *params = NULL;
-		int status;
 
 		memset(&g_alsa, 0, sizeof(g_alsa));
 		g_alsa.device = id;
@@ -159,36 +240,34 @@ static bool fn_alsa_start(AudioDeviceID id)
 		g_alsa.rate = 48000;
 		snprintf(g_alsa.pcm_name, sizeof(g_alsa.pcm_name), "%s", name != NULL ? name : "default");
 
-		status = snd_pcm_open(&g_alsa.pcm, g_alsa.pcm_name, SND_PCM_STREAM_PLAYBACK, 0);
-		if (status < 0) {
+		if (snd_pcm_open(&g_alsa.playback, g_alsa.pcm_name, SND_PCM_STREAM_PLAYBACK, 0) < 0
+		    || !fn_alsa_configure(g_alsa.playback, g_alsa.channels, &g_alsa.rate, &g_alsa.frames)) {
+			if (g_alsa.playback != NULL) {
+				snd_pcm_close(g_alsa.playback);
+				g_alsa.playback = NULL;
+			}
 			pthread_mutex_unlock(&g_alsa_lock);
 			return false;
 		}
 
-		snd_pcm_hw_params_alloca(&params);
-		snd_pcm_hw_params_any(g_alsa.pcm, params);
-		snd_pcm_hw_params_set_access(g_alsa.pcm, params, SND_PCM_ACCESS_RW_INTERLEAVED);
-		snd_pcm_hw_params_set_format(g_alsa.pcm, params, SND_PCM_FORMAT_FLOAT_LE);
-		snd_pcm_hw_params_set_channels(g_alsa.pcm, params, g_alsa.channels);
-		/* A `snd_pcm_uframes_t` IS `unsigned long`, NOT THE `UInt32` THESE FIELDS ARE: passing the field's
-		 * address makes ALSA write eight bytes into a four-byte slot and corrupt the struct behind it, which
-		 * presents as a malloc assertion somewhere else entirely. Locals, then copy back. */
+		/* Capture is the other direction of the same PCM, and it is optional: a device that plays but cannot
+		 * record, or records at another rate, leaves the output alone. The rate is the one thing that must
+		 * agree — the HAL describes one rate for the device, so a capture stream on another clock would be
+		 * handed to io procs as if it were this one. */
 		{
-			unsigned int rate = g_alsa.rate;
-			snd_pcm_uframes_t period = g_alsa.frames;
+			UInt32 capture_rate = g_alsa.rate;
+			UInt32 capture_frames = g_alsa.frames;
 
-			snd_pcm_hw_params_set_rate_near(g_alsa.pcm, params, &rate, 0);
-			snd_pcm_hw_params_set_period_size_near(g_alsa.pcm, params, &period, 0);
-
-			g_alsa.rate = rate;
-			g_alsa.frames = (UInt32)period;
-		}
-
-		if (snd_pcm_hw_params(g_alsa.pcm, params) < 0 || snd_pcm_prepare(g_alsa.pcm) < 0) {
-			snd_pcm_close(g_alsa.pcm);
-			g_alsa.pcm = NULL;
-			pthread_mutex_unlock(&g_alsa_lock);
-			return false;
+			if (fn_alsa_capture_opens()
+			    && snd_pcm_open(&g_alsa.capture, g_alsa.pcm_name, SND_PCM_STREAM_CAPTURE, 0) == 0) {
+				if (!fn_alsa_configure(g_alsa.capture, g_alsa.channels, &capture_rate, &capture_frames)
+				    || capture_rate != g_alsa.rate) {
+					snd_pcm_close(g_alsa.capture);
+					g_alsa.capture = NULL;
+				}
+			} else {
+				g_alsa.capture = NULL;
+			}
 		}
 
 		g_alsa.quit = false;
@@ -196,8 +275,12 @@ static bool fn_alsa_start(AudioDeviceID id)
 			g_alsa.running = true;
 			started = true;
 		} else {
-			snd_pcm_close(g_alsa.pcm);
-			g_alsa.pcm = NULL;
+			snd_pcm_close(g_alsa.playback);
+			g_alsa.playback = NULL;
+			if (g_alsa.capture != NULL) {
+				snd_pcm_close(g_alsa.capture);
+				g_alsa.capture = NULL;
+			}
 		}
 	} else if (g_alsa.device == id) {
 		started = true;
@@ -227,10 +310,14 @@ static void fn_alsa_stop(AudioDeviceID id)
 		pthread_join(thread, NULL);
 
 		pthread_mutex_lock(&g_alsa_lock);
-		if (g_alsa.pcm != NULL) {
-			snd_pcm_drain(g_alsa.pcm);
-			snd_pcm_close(g_alsa.pcm);
-			g_alsa.pcm = NULL;
+		if (g_alsa.capture != NULL) {
+			snd_pcm_close(g_alsa.capture);
+			g_alsa.capture = NULL;
+		}
+		if (g_alsa.playback != NULL) {
+			snd_pcm_drain(g_alsa.playback);
+			snd_pcm_close(g_alsa.playback);
+			g_alsa.playback = NULL;
 		}
 		pthread_mutex_unlock(&g_alsa_lock);
 	}
