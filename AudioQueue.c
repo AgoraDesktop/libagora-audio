@@ -1124,20 +1124,113 @@ OSStatus AudioQueueGetCurrentTime(AudioQueueRef inAQ, AudioQueueTimelineRef inTi
 	return 0;
 }
 
-/* ------------------------------------------------------------------------------------------------
- * The doors this phase refuses, by name: offline rendering needs a buffer chain that does not go through a
- * device, and a processing tap needs a hook inside one. Both are real work and neither has a caller here.
- * ---------------------------------------------------------------------------------------------- */
 
+/* **OFFLINE RENDER IS THE DEVICE'S JOB WITHOUT THE DEVICE.** The queued buffers are already in the client's format, so
+ * nothing has to be converted: a frame of output is a frame of buffer, and the queue hands each finished buffer back
+ * exactly as the io proc does — which is what lets a caller write a file without a sound card, and what makes the
+ * callback path testable without one. The one thing it does not do is mix in the device's rate: a queue whose device
+ * format differs from its client format converts on the way *out*, and there is no "out" here.
+ *
+ * **THE TIMESTAMP IS THE CALLER'S CLOCK, AND THE QUEUE KEEPS ITS OWN.** `inTimestamp` says when this block is meant to
+ * play; the queue advances `frames_played` and its sample time by what it rendered, which is the number the next call's
+ * timestamp should follow. */
 OSStatus AudioQueueOfflineRender(AudioQueueRef inAQ, const AudioTimeStamp *inTimestamp,
                                  AudioQueueBufferRef ioBuffer, UInt32 inNumberFrames)
 {
-	(void)inAQ;
-	(void)inTimestamp;
-	(void)ioBuffer;
-	(void)inNumberFrames;
+	AudioQueueRef queue = inAQ;
+	AudioQueueBufferRef finished[AGORA_QUEUE_MAX_PENDING];
+	UInt32 finished_count = 0;
+	UInt32 bytes_per_frame;
+	UInt32 produced = 0;
+	uint8_t *out;
 
-	return kAudioQueueErr_InvalidOfflineMode;
+	if (queue == NULL || ioBuffer == NULL || ioBuffer->mAudioData == NULL) {
+		return kAudio_ParamError;
+	}
+
+	bytes_per_frame = fn_pcm_bytes_per_frame(&queue->format);
+	if (bytes_per_frame == 0) {
+		return kAudioQueueErr_InvalidParameter;
+	}
+	if (inNumberFrames > ioBuffer->mAudioDataBytesCapacity / bytes_per_frame) {
+		return kAudioQueueErr_InvalidParameter;
+	}
+
+	out = ioBuffer->mAudioData;
+	memset(out, 0, (size_t)inNumberFrames * bytes_per_frame);
+
+	pthread_mutex_lock(&queue->lock);
+
+	while (produced < inNumberFrames) {
+		UInt32 take;
+
+		if (queue->current == NULL) {
+			queue->current = fn_pop_pending(queue);
+			queue->current_offset = 0;
+			if (queue->current == NULL) {
+				break;	/* nothing queued: the rest of the buffer stays silent */
+			}
+		}
+
+		if (queue->current_offset >= queue->current->mAudioDataByteSize) {
+			if (finished_count < AGORA_QUEUE_MAX_PENDING) {
+				finished[finished_count++] = queue->current;
+			}
+			queue->current = NULL;
+			queue->current_offset = 0;
+			continue;
+		}
+
+		take = (queue->current->mAudioDataByteSize - queue->current_offset) / bytes_per_frame;
+		if (take > inNumberFrames - produced) {
+			take = inNumberFrames - produced;
+		}
+		if (take == 0) {
+			break;		/* a buffer shorter than a frame cannot advance the render */
+		}
+
+		memcpy(out + (size_t)produced * bytes_per_frame,
+		       (const uint8_t *)queue->current->mAudioData + queue->current_offset,
+		       (size_t)take * bytes_per_frame);
+		queue->current_offset += take * bytes_per_frame;
+		produced += take;
+	}
+
+	/* **THE ANSWER IS THE WHOLE REQUEST, SILENCE INCLUDED.** A caller rendering a file writes what it is given, so a
+	 * short answer would truncate the file; and the time base advances by what was rendered, which is the request too —
+	 * an empty queue is still 512 frames of the timeline. */
+	ioBuffer->mAudioDataByteSize = inNumberFrames * bytes_per_frame;
+
+	queue->frames_played += inNumberFrames;
+	if ((queue->last_time.mFlags & kAudioTimeStampSampleTimeValid) == 0) {
+		/* The first render establishes the time base: the caller's timestamp when it gave one, and zero otherwise. */
+		memset(&queue->last_time, 0, sizeof(queue->last_time));
+		queue->last_time.mFlags = kAudioTimeStampSampleTimeValid | kAudioTimeStampHostTimeValid;
+		queue->last_time.mSampleTime = (inTimestamp != NULL
+		                                && (inTimestamp->mFlags & kAudioTimeStampSampleTimeValid))
+		                             ? inTimestamp->mSampleTime : 0.0;
+		queue->last_time.mHostTime = (inTimestamp != NULL) ? inTimestamp->mHostTime
+		                                                  : AudioGetCurrentHostTime();
+	}
+	queue->last_time.mSampleTime += (Float64)inNumberFrames;
+
+	pthread_mutex_unlock(&queue->lock);
+
+	/* The callbacks run with the lock released, for the same reason the io proc's do: the caller refills and re-enqueues
+	 * the buffer from inside one. */
+	{
+		UInt32 i;
+
+		for (i = 0; i < finished_count; i++) {
+			if (queue->callback != NULL) {
+				queue->callback(queue->client, queue, finished[i]);
+			} else if (queue->block != NULL) {
+				queue->block(queue, finished[i]);
+			}
+		}
+	}
+
+	return 0;
 }
 
 OSStatus AudioQueueCreateTimeline(AudioQueueRef inAQ, AudioQueueTimelineRef *outTimeline)

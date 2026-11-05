@@ -336,6 +336,141 @@ static void fn_test_timeline(void)
 }
 
 /* ------------------------------------------------------------------------------------------------
+ * Offline render: the queue without a device.
+ *
+ * **IT MUST PRODUCE THE BUFFERS THAT WERE QUEUED, IN THE ORDER THEY WERE QUEUED, AND HAND THEM BACK WHEN THEY RUN OUT.**
+ * That is the whole contract, and the samples make it measurable: a buffer filled with 0.5 comes out as 0.5, a buffer
+ * that ends mid-render resumes exactly where it stopped, and the callback that refills it fires once the queue has
+ * consumed it.
+ * ---------------------------------------------------------------------------------------------- */
+
+typedef struct {
+	int calls;
+} offline_state;
+
+static void fn_offline_refilled(void *client, AudioQueueRef queue, AudioQueueBufferRef buffer)
+{
+	offline_state *state = client;
+
+	(void)queue;
+	(void)buffer;
+	state->calls++;
+}
+
+static void fn_test_offline(void)
+{
+	AudioStreamBasicDescription format = fn_pcm(48000.0, 2, 32, kAudioFormatFlagIsFloat | kAudioFormatFlagIsPacked);
+	AudioQueueRef queue = NULL;
+	AudioQueueBufferRef queued = NULL;
+	AudioQueueBufferRef rendered = NULL;
+	AudioQueueBufferRef out = NULL;
+	offline_state state;
+	OSStatus status;
+	UInt32 sample;
+	UInt32 frames = 512;
+	UInt32 i;
+	float *samples;
+	AudioTimeStamp stamp;
+	Boolean discontinuity = true;
+
+	memset(&stamp, 0, sizeof(stamp));
+	stamp.mFlags = kAudioTimeStampSampleTimeValid;
+	stamp.mHostTime = AudioGetCurrentHostTime();
+
+	memset(&state, 0, sizeof(state));
+
+	status = AudioQueueNewOutput(&format, fn_offline_refilled, &state, NULL, NULL, 0, &queue);
+	fn_check("a queue for offline render is created", status == 0 && queue != NULL);
+	if (status != 0) {
+		return;
+	}
+
+	/* TWO BUFFERS: the render must cross the boundary between them. */
+	AudioQueueAllocateBuffer(queue, frames * 8, &queued);
+	AudioQueueAllocateBuffer(queue, frames * 8, &rendered);
+	/* The output buffer is bigger than either queued one, because a render may span them. */
+	AudioQueueAllocateBuffer(queue, 1024 * 8, &out);
+
+	samples = queued->mAudioData;
+	for (sample = 0; sample < frames * 2; sample++) {
+		samples[sample] = 0.5f;
+	}
+	queued->mAudioDataByteSize = frames * 8;
+
+	samples = rendered->mAudioData;
+	for (sample = 0; sample < frames * 2; sample++) {
+		samples[sample] = -0.25f;
+	}
+	rendered->mAudioDataByteSize = frames * 8;
+
+	fn_check("the buffers are queued",
+	         AudioQueueEnqueueBuffer(queue, queued, 0, NULL) == 0
+	         && AudioQueueEnqueueBuffer(queue, rendered, 0, NULL) == 0);
+
+	/* 768 frames: the whole first buffer and half of the second. */
+	status = AudioQueueOfflineRender(queue, &stamp, out, 768);
+	fn_check("the queue renders offline", status == 0);
+	fn_check("the render reports the bytes it produced", out->mAudioDataByteSize == 768 * 8);
+	{
+		float *produced = out->mAudioData;
+		bool first_half = true;
+		bool second_half = true;
+
+		for (i = 0; i < 512 * 2; i++) {
+			if (produced[i] != 0.5f) {
+				first_half = false;
+			}
+		}
+		for (i = 512 * 2; i < 768 * 2; i++) {
+			if (produced[i] != -0.25f) {
+				second_half = false;
+			}
+		}
+		fn_check("the first buffer's samples come out as they went in", first_half);
+		fn_check("the render crosses into the next buffer exactly", second_half);
+	}
+	fn_check("the buffer that ran out is handed back", state.calls == 1);
+
+	/* The rest of the second buffer, then silence because nothing is queued. */
+	status = AudioQueueOfflineRender(queue, &stamp, out, 512);
+	fn_check("the render continues where it stopped", status == 0);
+	{
+		float *produced = out->mAudioData;
+		bool tail = true;
+		bool silence = true;
+
+		for (i = 0; i < 256 * 2; i++) {
+			if (produced[i] != -0.25f) {
+				tail = false;
+			}
+		}
+		for (i = 256 * 2; i < 512 * 2; i++) {
+			if (produced[i] != 0.0f) {
+				silence = false;
+			}
+		}
+		fn_check("the second buffer's tail is its own samples", tail);
+		fn_check("an empty queue renders silence", silence);
+	}
+	fn_check("both buffers are handed back", state.calls == 2);
+
+	{
+		AudioTimeStamp time;
+
+		memset(&time, 0, sizeof(time));
+		fn_check("an offline queue has a time base",
+		         AudioQueueGetCurrentTime(queue, NULL, &time, &discontinuity) == 0
+		         && (time.mFlags & kAudioTimeStampSampleTimeValid) != 0);
+		printf("      offline sample time %.1f (flags 0x%x)\n", (double)time.mSampleTime, (unsigned)time.mFlags);
+		fn_check("the sample time is what was rendered", time.mSampleTime == 1280.0);
+	}
+
+	fn_check("a buffer too small for the request is refused by name",
+	         AudioQueueOfflineRender(queue, &stamp, out, 100000) == kAudioQueueErr_InvalidParameter);
+	fn_check("the queue is disposed", AudioQueueDispose(queue, true) == 0);
+}
+
+/* ------------------------------------------------------------------------------------------------
  * The system sounds.
  * ---------------------------------------------------------------------------------------------- */
 
@@ -491,6 +626,7 @@ int main(void)
 
 	fn_test_queue();
 	fn_test_timeline();
+	fn_test_offline();
 	fn_test_mono_mapping();
 	fn_test_system_sounds();
 

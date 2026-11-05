@@ -162,9 +162,15 @@ not on every look. `AudioServicesPlaySystemSound` keeps a pool of four queues, s
 first, and a completion block is called when the buffer comes back from the queue rather than before a sample has been
 heard.
 
-Still to come: the `AudioQueue` input side (there is no capture backend in the HAL, so the door refuses by name),
-`AUGraph` sub-graphs (their Carbon doors are not declared), `AudioQueueOfflineRender` and processing taps, and
-`AudioFormat`'s `kAudioFormatProperty_FormatList`. `../AUDIO-PLAN.md` §9 is the schedule and §6 the header-by-header
+**And a queue can render without a device.** `AudioQueueOfflineRender` consumes the queued buffers into the caller's
+buffer in the client's format, hands each finished buffer back through the same callback the io proc uses, and fills
+what is left with silence — the path a caller writes a file through, and the one that makes the callback path testable
+on a machine with no sound card at all.
+
+Still to come: the `AudioQueue` input side (there is no capture backend in the HAL — no driver opens a stream for
+reading — so the door refuses by name), processing taps, `AUGraph` sub-graphs (their Carbon doors are not declared), and
+`AudioFormat`'s `kAudioFormatProperty_FormatList` (the constant is in the manifest but its specifier's shape is not, so
+the door stays refused rather than guessed). `../AUDIO-PLAN.md` §9 is the schedule and §6 the header-by-header
 commitment.
 
 The three PCM containers are ours rather than a library's: WAV is a little-endian chunk list, AIFF is a
