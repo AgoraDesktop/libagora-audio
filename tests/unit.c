@@ -15,6 +15,7 @@
 #include <AudioToolbox/AudioComponent.h>
 #include <AudioToolbox/AudioUnit.h>
 #include <AudioToolbox/AudioOutputUnit.h>
+#include <AudioToolbox/AUGraph.h>
 #include "AudioToolbox_internal.h"
 
 #include <stdio.h>
@@ -392,6 +393,95 @@ static void fn_test_mixer_unit(void)
 	AudioComponentInstanceDispose(unit);
 }
 
+/* ------------------------------------------------------------------------------------------------
+ * The graph.
+ * ---------------------------------------------------------------------------------------------- */
+
+static void fn_test_graph(void)
+{
+	AudioDeviceID device = fn_default_output();
+	AUGraph graph = NULL;
+	AUNode mixer = -1;
+	AUNode output = -1;
+	AudioComponentDescription mixer_desc = { kAudioUnitType_Mixer, kAudioUnitSubType_MultiChannelMixer,
+	                                         kAudioUnitManufacturer_Apple, 0, 0 };
+	AudioComponentDescription output_desc = { kAudioUnitType_Output, kAudioUnitSubType_DefaultOutput,
+	                                          kAudioUnitManufacturer_Apple, 0, 0 };
+	AudioUnit mixer_unit = NULL;
+	source_state loud = { 0.25f };
+	source_state quiet = { 0.125f };
+	AURenderCallbackStruct callback;
+	UInt32 buses = 2;
+	UInt32 count = 0;
+	float peak = 0.0f;
+	Boolean flag = false;
+
+	fn_check("a graph is created", NewAUGraph(&graph) == 0 && graph != NULL);
+	if (graph == NULL) {
+		return;
+	}
+
+	fn_check("the mixer node is added",
+	         AUGraphAddNode(graph, &mixer_desc, &mixer) == 0 && mixer >= 0);
+	fn_check("the output node is added",
+	         AUGraphAddNode(graph, &output_desc, &output) == 0 && output >= 0);
+
+	fn_check("the graph reports two nodes",
+	         AUGraphGetNodeCount(graph, &count) == 0 && count == 2);
+
+	{
+		AUNode first = -1;
+		AudioComponentDescription described;
+
+		fn_check("a node can be found by index",
+		         AUGraphGetIndNode(graph, 0, &first) == 0 && first == mixer);
+		fn_check("a node's description comes back",
+		         AUGraphNodeInfo(graph, mixer, &described, &mixer_unit) == 0
+		         && described.componentSubType == kAudioUnitSubType_MultiChannelMixer
+		         && mixer_unit != NULL);
+	}
+
+	/* Two buses, each with its own source, both feeding the mixer directly. */
+	fn_check("the mixer takes two buses",
+	         AudioUnitSetProperty(mixer_unit, kAudioUnitProperty_ElementCount, kAudioUnitScope_Input, 0,
+	                              &buses, sizeof(buses)) == 0);
+
+	callback.inputProc = fn_tone;
+	callback.inputProcRefCon = &loud;
+	fn_check("bus 0's source is set on the graph",
+	         AUGraphSetNodeInputCallback(graph, mixer, 0, &callback) == 0);
+
+	callback.inputProcRefCon = &quiet;
+	fn_check("bus 1's source is set on the graph",
+	         AUGraphSetNodeInputCallback(graph, mixer, 1, &callback) == 0);
+
+	fn_check("the mixer feeds the output",
+	         AUGraphConnectNodeInput(graph, mixer, 0, output, 0) == 0);
+	fn_check("the graph counts one connection",
+	         AUGraphGetNumberOfConnections(graph, &count) == 0 && count == 1);
+
+	/* A connection back the other way would close a ring, and a ring is not a graph. */
+	fn_check("a cycle is refused",
+	         AUGraphConnectNodeInput(graph, output, 0, mixer, 0) == kAUGraphErr_InvalidConnection);
+	fn_check("an unknown node is refused",
+	         AUGraphConnectNodeInput(graph, 99, 0, output, 0) == kAUGraphErr_NodeNotFound);
+
+	fn_check("the graph opens", AUGraphOpen(graph) == 0);
+	fn_check("the graph initialises", AUGraphInitialize(graph) == 0);
+
+	fn_check("the graph starts", AUGraphStart(graph) == 0);
+	fn_check("the graph says it is running", AUGraphIsRunning(graph, &flag) == 0 && flag);
+
+	fn_sleep_ms(200);
+	fn_agora_audio_test_peaks(device, &peak, NULL);
+	fn_check("the graph's mix reaches the device", peak > 0.37f && peak < 0.38f);
+
+	fn_check("the graph stops", AUGraphStop(graph) == 0);
+	fn_check("the graph says it is stopped", AUGraphIsRunning(graph, &flag) == 0 && !flag);
+
+	fn_check("the graph is disposed", DisposeAUGraph(graph) == 0);
+}
+
 int main(void);
 int main(void)
 {
@@ -402,6 +492,7 @@ int main(void)
 	fn_test_output_unit();
 	fn_test_converter_unit();
 	fn_test_mixer_unit();
+	fn_test_graph();
 
 	if (g_failures != 0) {
 		fprintf(stderr, "unit: %d failure(s)\n", g_failures);

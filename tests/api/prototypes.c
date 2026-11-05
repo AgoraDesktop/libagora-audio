@@ -299,6 +299,24 @@ static OSStatus (*p_AudioUnitReset)(AudioUnit _Nonnull, AudioUnitScope, AudioUni
 static OSStatus (*p_AudioOutputUnitStart)(AudioUnit _Nonnull) = AudioOutputUnitStart;
 static OSStatus (*p_AudioOutputUnitStop)(AudioUnit _Nonnull) = AudioOutputUnitStop;
 
+/* --- AudioToolbox/AUGraph.h ------------------------------------------------ */
+static OSStatus (*p_NewAUGraph)(AUGraph _Nullable * _Nonnull) = NewAUGraph;
+static OSStatus (*p_DisposeAUGraph)(AUGraph _Nonnull) = DisposeAUGraph;
+static OSStatus (*p_AUGraphAddNode)(AUGraph _Nonnull, const AudioComponentDescription * _Nonnull,
+                                    AUNode * _Nonnull) = AUGraphAddNode;
+static OSStatus (*p_AUGraphConnectNodeInput)(AUGraph _Nonnull, AUNode, UInt32, AUNode, UInt32)
+    = AUGraphConnectNodeInput;
+static OSStatus (*p_AUGraphSetNodeInputCallback)(AUGraph _Nonnull, AUNode, UInt32,
+                                                 const AURenderCallbackStruct * _Nonnull)
+    = AUGraphSetNodeInputCallback;
+static OSStatus (*p_AUGraphOpen)(AUGraph _Nonnull) = AUGraphOpen;
+static OSStatus (*p_AUGraphInitialize)(AUGraph _Nonnull) = AUGraphInitialize;
+static OSStatus (*p_AUGraphStart)(AUGraph _Nonnull) = AUGraphStart;
+static OSStatus (*p_AUGraphStop)(AUGraph _Nonnull) = AUGraphStop;
+static OSStatus (*p_AUGraphNodeInfo)(AUGraph _Nonnull, AUNode, AudioComponentDescription * _Nullable,
+                                     AudioUnit _Nullable * _Nullable) = AUGraphNodeInfo;
+static OSStatus (*p_AUGraphGetNodeCount)(AUGraph _Nonnull, UInt32 * _Nonnull) = AUGraphGetNodeCount;
+
 int main(void);
 int main(void)
 {
@@ -360,6 +378,10 @@ int main(void)
 		(void *)p_AudioUnitGetParameter, (void *)p_AudioUnitSetParameter,
 		(void *)p_AudioUnitRender, (void *)p_AudioUnitReset,
 		(void *)p_AudioOutputUnitStart, (void *)p_AudioOutputUnitStop,
+		(void *)p_NewAUGraph, (void *)p_DisposeAUGraph, (void *)p_AUGraphAddNode,
+		(void *)p_AUGraphConnectNodeInput, (void *)p_AUGraphSetNodeInputCallback,
+		(void *)p_AUGraphOpen, (void *)p_AUGraphInitialize, (void *)p_AUGraphStart,
+		(void *)p_AUGraphStop, (void *)p_AUGraphNodeInfo, (void *)p_AUGraphGetNodeCount,
 	};
 
 	return unused[0] == NULL ? 0 : 0;

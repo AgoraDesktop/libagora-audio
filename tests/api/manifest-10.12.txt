@@ -5,7 +5,7 @@
 # record size, alignment and field offsets, enumeration values, typedefs, prototypes.
 # The SDK itself is never committed — only measurements of it.
 #
-# headers: CoreAudio/CoreAudioTypes.h CoreAudio/HostTime.h CoreAudio/AudioHardwareBase.h CoreAudio/AudioHardware.h AudioToolbox/AudioFormat.h AudioToolbox/AudioConverter.h AudioToolbox/AudioFile.h AudioToolbox/AudioFileStream.h AudioToolbox/ExtendedAudioFile.h AudioToolbox/AudioQueue.h AudioToolbox/AudioServices.h AudioToolbox/AudioComponent.h AudioToolbox/AudioUnit.h AudioToolbox/AudioOutputUnit.h
+# headers: CoreAudio/CoreAudioTypes.h CoreAudio/HostTime.h CoreAudio/AudioHardwareBase.h CoreAudio/AudioHardware.h AudioToolbox/AudioFormat.h AudioToolbox/AudioConverter.h AudioToolbox/AudioFile.h AudioToolbox/AudioFileStream.h AudioToolbox/ExtendedAudioFile.h AudioToolbox/AudioQueue.h AudioToolbox/AudioServices.h AudioToolbox/AudioComponent.h AudioToolbox/AudioUnit.h AudioToolbox/AudioOutputUnit.h AudioToolbox/AUGraph.h
 # framework headers staged: 38
 
 [record] AUChannelInfo
@@ -24,7 +24,7 @@
   sizeof 12
   align 4
   field 0 inNumberOfPairs UInt32
-  field 4 pairs struct (unnamed struct at /tmp/agora-api-9jypezrx/stage/AudioToolbox/AudioUnitProperties.h:1943:2)[1]
+  field 4 pairs struct (unnamed struct at /tmp/agora-api-lfvk0ryw/stage/AudioToolbox/AudioUnitProperties.h:1943:2)[1]
 
 [record] AUHostIdentifier
   sizeof 16
@@ -53,6 +53,32 @@
   align 8
   field 0 midiOutputCallback AUMIDIOutputCallback _Nonnull
   field 8 userData void * _Nullable
+
+[record] AUNodeInteraction
+  sizeof 32
+  align 8
+  field 0 nodeInteractionType UInt32
+  field 8 nodeInteraction union AUNodeInteraction::(unnamed at /tmp/agora-api-lfvk0ryw/stage/AudioToolbox/AUGraph.h:313:2)
+  field 8 connection struct AudioUnitNodeConnection
+  field 8 sourceNode AUNode
+  field 12 sourceOutputNumber UInt32
+  field 16 destNode AUNode
+  field 20 destInputNumber UInt32
+  field 8 inputCallback struct AUNodeRenderCallback
+  field 8 destNode AUNode
+  field 12 destInputNumber AudioUnitElement
+  field 16 cback struct AURenderCallbackStruct
+  field 16 inputProc AURenderCallback _Nullable
+  field 24 inputProcRefCon void * _Nullable
+
+[record] AUNodeRenderCallback
+  sizeof 24
+  align 8
+  field 0 destNode AUNode
+  field 4 destInputNumber AudioUnitElement
+  field 8 cback struct AURenderCallbackStruct
+  field 8 inputProc AURenderCallback _Nullable
+  field 16 inputProcRefCon void * _Nullable
 
 [record] AUNumVersion
   sizeof 4
@@ -458,6 +484,14 @@
   field 4 sawInfinity Boolean
   field 5 sawNotANumber Boolean
 
+[record] AudioUnitNodeConnection
+  sizeof 16
+  align 4
+  field 0 sourceNode AUNode
+  field 4 sourceOutputNumber UInt32
+  field 8 destNode AUNode
+  field 12 destInputNumber UInt32
+
 [record] AudioUnitOtherPluginDesc
   sizeof 16
   align 4
@@ -482,13 +516,13 @@
   field 4 element AudioUnitElement
   field 8 parameter AudioUnitParameterID
   field 12 eventType AUParameterEventType
-  field 16 eventValues union AudioUnitParameterEvent::(unnamed at /tmp/agora-api-9jypezrx/stage/AudioToolbox/AUComponent.h:795:2)
-  field 16 ramp struct AudioUnitParameterEvent::(unnamed at /tmp/agora-api-9jypezrx/stage/AudioToolbox/AUComponent.h:797:3)
+  field 16 eventValues union AudioUnitParameterEvent::(unnamed at /tmp/agora-api-lfvk0ryw/stage/AudioToolbox/AUComponent.h:795:2)
+  field 16 ramp struct AudioUnitParameterEvent::(unnamed at /tmp/agora-api-lfvk0ryw/stage/AudioToolbox/AUComponent.h:797:3)
   field 16 startBufferOffset SInt32
   field 20 durationInFrames UInt32
   field 24 startValue AudioUnitParameterValue
   field 28 endValue AudioUnitParameterValue
-  field 16 immediate struct AudioUnitParameterEvent::(unnamed at /tmp/agora-api-9jypezrx/stage/AudioToolbox/AUComponent.h:805:3)
+  field 16 immediate struct AudioUnitParameterEvent::(unnamed at /tmp/agora-api-lfvk0ryw/stage/AudioToolbox/AUComponent.h:805:3)
   field 16 bufferOffset UInt32
   field 20 value AudioUnitParameterValue
 
@@ -760,6 +794,11 @@
 [constant] k3DMixerRenderingFlags_DopplerShift = 2
 [constant] k3DMixerRenderingFlags_InterAuralDelay = 1
 [constant] k3DMixerRenderingFlags_LinearDistanceAttenuation = 32
+[constant] kAUGraphErr_CannotDoInCurrentContext = -10863
+[constant] kAUGraphErr_InvalidAudioUnit = -10864
+[constant] kAUGraphErr_InvalidConnection = -10861
+[constant] kAUGraphErr_NodeNotFound = -10860
+[constant] kAUGraphErr_OutputNodeErr = -10862
 [constant] kAUGroupParameterID_AllNotesOff = 123
 [constant] kAUGroupParameterID_AllSoundOff = 120
 [constant] kAUGroupParameterID_ChannelPressure = 208
@@ -842,6 +881,8 @@
 [constant] kAUNetStatus_NotConnected = 0
 [constant] kAUNetStatus_Overflow = 2
 [constant] kAUNetStatus_Underflow = 3
+[constant] kAUNodeInteraction_Connection = 1
+[constant] kAUNodeInteraction_InputCallback = 2
 [constant] kAUParameterMIDIMapping_AnyChannelFlag = 1
 [constant] kAUParameterMIDIMapping_AnyNoteFlag = 2
 [constant] kAUParameterMIDIMapping_Bipolar = 16
@@ -2572,12 +2613,17 @@
 [typedef] AUChannelInfo = struct AUChannelInfo
 [typedef] AUDependentParameter = struct AUDependentParameter
 [typedef] AUDistanceAttenuationData = struct AUDistanceAttenuationData
+[typedef] AUGraph = struct OpaqueAUGraph *
 [typedef] AUHostIdentifier = struct AUHostIdentifier
 [typedef] AUHostVersionIdentifier = struct AUHostVersionIdentifier
 [typedef] AUInputSamplesInOutputCallback = void (*)(void * _Nonnull, const AudioTimeStamp * _Nonnull, Float64, Float64)
 [typedef] AUInputSamplesInOutputCallbackStruct = struct AUInputSamplesInOutputCallbackStruct
 [typedef] AUMIDIOutputCallback = OSStatus (*)(void * _Nullable, const AudioTimeStamp * _Nonnull, UInt32, const struct MIDIPacketList * _Nonnull)
 [typedef] AUMIDIOutputCallbackStruct = struct AUMIDIOutputCallbackStruct
+[typedef] AUNode = SInt32
+[typedef] AUNodeConnection = struct AudioUnitNodeConnection
+[typedef] AUNodeInteraction = struct AUNodeInteraction
+[typedef] AUNodeRenderCallback = struct AUNodeRenderCallback
 [typedef] AUNumVersion = struct AUNumVersion
 [typedef] AUParameterEventType = UInt32
 [typedef] AUParameterMIDIMapping = struct AUParameterMIDIMapping
@@ -2731,6 +2777,7 @@
 [typedef] AudioUnitInitializeProc = OSStatus (*)(void * _Nonnull)
 [typedef] AudioUnitMIDIControlMapping = struct AudioUnitMIDIControlMapping
 [typedef] AudioUnitMeterClipping = struct AudioUnitMeterClipping
+[typedef] AudioUnitNodeConnection = struct AudioUnitNodeConnection
 [typedef] AudioUnitOtherPluginDesc = struct AudioUnitOtherPluginDesc
 [typedef] AudioUnitParameter = struct AudioUnitParameter
 [typedef] AudioUnitParameterEvent = struct AudioUnitParameterEvent
@@ -2797,6 +2844,42 @@
 [typedef] ScheduledAudioSliceCompletionProc = void (*)(void * _Nullable, ScheduledAudioSlice * _Nonnull)
 [typedef] SystemSoundID = UInt32
 
+[function] AUGraphAddNode = OSStatus (AUGraph _Nonnull, const AudioComponentDescription * _Nonnull, AUNode * _Nonnull)
+[function] AUGraphAddRenderNotify = OSStatus (AUGraph _Nonnull, AURenderCallback _Nonnull, void * _Nullable)
+[function] AUGraphClearConnections = OSStatus (AUGraph _Nonnull)
+[function] AUGraphClose = OSStatus (AUGraph _Nonnull)
+[function] AUGraphConnectNodeInput = OSStatus (AUGraph _Nonnull, AUNode, UInt32, AUNode, UInt32)
+[function] AUGraphCountNodeConnections = OSStatus (AUGraph _Nonnull, AUNode, UInt32 * _Nonnull)
+[function] AUGraphCountNodeInteractions = OSStatus (AUGraph _Nonnull, AUNode, UInt32 * _Nonnull)
+[function] AUGraphDisconnectNodeInput = OSStatus (AUGraph _Nonnull, AUNode, UInt32)
+[function] AUGraphGetCPULoad = OSStatus (AUGraph _Nonnull, Float32 * _Nonnull)
+[function] AUGraphGetConnectionInfo = OSStatus (AUGraph _Nonnull, UInt32, AUNode * _Nonnull, UInt32 * _Nonnull, AUNode * _Nonnull, UInt32 * _Nonnull)
+[function] AUGraphGetIndNode = OSStatus (AUGraph _Nonnull, UInt32, AUNode * _Nonnull)
+[function] AUGraphGetInteractionInfo = OSStatus (AUGraph _Nonnull, UInt32, AUNodeInteraction * _Nonnull)
+[function] AUGraphGetMaxCPULoad = OSStatus (AUGraph _Nonnull, Float32 * _Nonnull)
+[function] AUGraphGetNodeConnections = OSStatus (AUGraph _Nonnull, AUNode, AudioUnitNodeConnection * _Nonnull, UInt32 * _Nonnull)
+[function] AUGraphGetNodeCount = OSStatus (AUGraph _Nonnull, UInt32 * _Nonnull)
+[function] AUGraphGetNodeInfo = OSStatus (AUGraph _Nonnull, AUNode, struct ComponentDescription * _Nonnull, UInt32 * _Nonnull, void * _Nullable * _Nullable, AudioUnit  _Nullable * _Nullable)
+[function] AUGraphGetNodeInfoSubGraph = OSStatus (const AUGraph _Nonnull, AUNode, AUGraph  _Nullable * _Nonnull)
+[function] AUGraphGetNodeInteractions = OSStatus (AUGraph _Nonnull, AUNode, UInt32 * _Nonnull, AUNodeInteraction * _Nonnull)
+[function] AUGraphGetNumberOfConnections = OSStatus (AUGraph _Nonnull, UInt32 * _Nonnull)
+[function] AUGraphGetNumberOfInteractions = OSStatus (AUGraph _Nonnull, UInt32 * _Nonnull)
+[function] AUGraphInitialize = OSStatus (AUGraph _Nonnull)
+[function] AUGraphIsInitialized = OSStatus (AUGraph _Nonnull, Boolean * _Nonnull)
+[function] AUGraphIsNodeSubGraph = OSStatus (const AUGraph _Nonnull, AUNode, Boolean * _Nonnull)
+[function] AUGraphIsOpen = OSStatus (AUGraph _Nonnull, Boolean * _Nonnull)
+[function] AUGraphIsRunning = OSStatus (AUGraph _Nonnull, Boolean * _Nonnull)
+[function] AUGraphNewNode = OSStatus (AUGraph _Nonnull, const struct ComponentDescription * _Nonnull, UInt32, const void * _Nonnull, AUNode * _Nonnull)
+[function] AUGraphNewNodeSubGraph = OSStatus (AUGraph _Nonnull, AUNode * _Nonnull)
+[function] AUGraphNodeInfo = OSStatus (AUGraph _Nonnull, AUNode, AudioComponentDescription * _Nullable, AudioUnit  _Nullable * _Nullable)
+[function] AUGraphOpen = OSStatus (AUGraph _Nonnull)
+[function] AUGraphRemoveNode = OSStatus (AUGraph _Nonnull, AUNode)
+[function] AUGraphRemoveRenderNotify = OSStatus (AUGraph _Nonnull, AURenderCallback _Nonnull, void * _Nullable)
+[function] AUGraphSetNodeInputCallback = OSStatus (AUGraph _Nonnull, AUNode, UInt32, const AURenderCallbackStruct * _Nonnull)
+[function] AUGraphStart = OSStatus (AUGraph _Nonnull)
+[function] AUGraphStop = OSStatus (AUGraph _Nonnull)
+[function] AUGraphUninitialize = OSStatus (AUGraph _Nonnull)
+[function] AUGraphUpdate = OSStatus (AUGraph _Nonnull, Boolean * _Nullable)
 [function] AudioCodecAppendInputBufferList = OSStatus (AudioCodec _Nonnull, const AudioBufferList * _Nonnull, UInt32 * _Nonnull, const AudioStreamPacketDescription * _Nullable, UInt32 * _Nonnull)
 [function] AudioCodecAppendInputData = OSStatus (AudioCodec _Nonnull, const void * _Nonnull, UInt32 * _Nonnull, UInt32 * _Nonnull, const AudioStreamPacketDescription * _Nullable)
 [function] AudioCodecGetProperty = OSStatus (AudioCodec _Nonnull, AudioCodecPropertyID, UInt32 * _Nonnull, void * _Nonnull)
@@ -2982,6 +3065,7 @@
 [function] AudioUnitSetParameter = OSStatus (AudioUnit _Nonnull, AudioUnitParameterID, AudioUnitScope, AudioUnitElement, AudioUnitParameterValue, UInt32)
 [function] AudioUnitSetProperty = OSStatus (AudioUnit _Nonnull, AudioUnitPropertyID, AudioUnitScope, AudioUnitElement, const void * _Nullable, UInt32)
 [function] AudioUnitUninitialize = OSStatus (AudioUnit _Nonnull)
+[function] DisposeAUGraph = OSStatus (AUGraph _Nonnull)
 [function] ExtAudioFileCreateNew = OSStatus (const struct FSRef * _Nonnull, CFStringRef _Nonnull, AudioFileTypeID, const AudioStreamBasicDescription * _Nonnull, const AudioChannelLayout * _Nullable, ExtAudioFileRef  _Nullable * _Nonnull)
 [function] ExtAudioFileCreateWithURL = OSStatus (CFURLRef _Nonnull, AudioFileTypeID, const AudioStreamBasicDescription * _Nonnull, const AudioChannelLayout * _Nullable, UInt32, ExtAudioFileRef  _Nullable * _Nonnull)
 [function] ExtAudioFileDispose = OSStatus (ExtAudioFileRef _Nonnull)
@@ -3002,3 +3086,4 @@
 [function] MusicDeviceStartNote = OSStatus (MusicDeviceComponent _Nonnull, MusicDeviceInstrumentID, MusicDeviceGroupID, NoteInstanceID * _Nonnull, UInt32, const MusicDeviceNoteParams * _Nonnull)
 [function] MusicDeviceStopNote = OSStatus (MusicDeviceComponent _Nonnull, MusicDeviceGroupID, NoteInstanceID, UInt32)
 [function] MusicDeviceSysEx = OSStatus (MusicDeviceComponent _Nonnull, const UInt8 * _Nonnull, UInt32)
+[function] NewAUGraph = OSStatus (AUGraph  _Nullable * _Nonnull)

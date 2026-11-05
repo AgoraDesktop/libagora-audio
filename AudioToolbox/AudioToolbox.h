@@ -24,5 +24,6 @@
 #include <AudioToolbox/AudioComponent.h>
 #include <AudioToolbox/AudioUnit.h>
 #include <AudioToolbox/AudioOutputUnit.h>
+#include <AudioToolbox/AUGraph.h>
 
 #endif /* AGORA_AUDIOTOOLBOX_AUDIOTOOLBOX_H */

@@ -37,6 +37,7 @@ libagora-audio/AudioToolbox/
     AudioComponent.h     what a unit is before it is an instance
     AudioUnit.h          scopes, elements, properties and the pull
     AudioOutputUnit.h    starting a unit that emits audio
+    AUGraph.h            units wired to each other
 HostTime.c               the host clock over clock_gettime(CLOCK_MONOTONIC)
 AudioFormat.c            the four properties answered, and the frame arithmetic behind them
 AudioResampler.c         the windowed-sinc, arbitrary-ratio interpolator
@@ -51,6 +52,7 @@ AudioHardwareDeprecated.c  the pre-10.7 doors, translated into the object API
 AudioQueue.c             buffers in, played frames out, over the device layer
 AudioServices.c          a file and a number; the alert is generated, not vendored
 AudioUnit.c              the registry of three, and the three units behind it
+AudioGraph.c             nodes, connections, and the pull that goes down them
 tools/refshim/           sixty lines of ours, so clang on Linux can parse Apple's headers
 tools/api-manifest.py    generates tests/api/manifest-10.12.txt from a MacOSX10.12.sdk
 tests/api/               the four identity gates
@@ -90,7 +92,7 @@ seam*, not the API, and they stay out of every public header.
 | `tests/api/macros.c` | a constant's value and the flag-decoding macro, checked by value at run time |
 | `tests/api/compile-cxx.cpp` | headers that only compile as C: `extern "C"`, the inline helpers Apple ships |
 | `tests/api/prototypes.c` | a changed parameter, a dropped `const`, a `UInt32 *` that became `UInt32` — 69 prototypes through pointers typed from the manifest |
-| `tests/api/manifest-10.12.txt` | the record itself: 78 records, 1832 enumeration constants, 229 typedefs, 205 prototypes |
+| `tests/api/manifest-10.12.txt` | the record itself: 81 records, 1839 enumeration constants, 235 typedefs, 243 prototypes |
 
 The manifest is generated, never hand-edited:
 
@@ -135,7 +137,8 @@ manifest already holds every one of them.
   library.
 - **`unit`** — the registry finds a built-in and does not invent a fourth; an output unit with a callback
   renders 0.5 and the device measures it; a converter turns int16 0.25 into float32 0.25; a two-bus mixer sums
-  0.25 + 0.125 to **0.375**, and halving one bus's volume halves its contribution.
+  0.25 + 0.125 to **0.375**, and halving one bus's volume halves its contribution; and a graph of mixer → output
+  reaches the device with that same 0.375, while a connection that would close a cycle is refused.
 - **`queue`** — a buffer of 0.5 played through a refilling callback measures **0.5** at the device, **0.25**
   after the queue's volume is halved, **0.0** after a stop; a buffer enqueued twice is refused by name; and
   the system sounds are audible: a WAV loaded by URL, and the **generated** alert tone.
