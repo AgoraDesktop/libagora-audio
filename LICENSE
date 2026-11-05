@@ -1,0 +1,54 @@
+# Licensing
+
+`libagora-audio` is free software, licensed **per artifact**:
+
+| Artifact | Location | Licence |
+|---|---|---|
+| The library | every source file outside the directories listed below | **GNU Lesser General Public License, version 3 or later** |
+| Programs | `tests/` | **GNU General Public License, version 3 or later** |
+| The reference shims | `tools/refshim/` | **GNU Lesser General Public License, version 3 or later** — written here, not extracted |
+
+## Licence texts
+
+- `COPYING` — GNU General Public License, version 3.
+- `COPYING.LESSER` — GNU Lesser General Public License, version 3. This is the
+  *additional permissions* text that sits on top of `COPYING`; LGPL-3.0 is not a
+  standalone document, which is why both files are present.
+
+Both are verbatim copies of the canonical texts published by the Free Software
+Foundation at <https://www.gnu.org/licenses/>. Do not edit them.
+
+Every source file carries the SPDX identifier that applies to it:
+
+```
+SPDX-License-Identifier: LGPL-3.0-or-later   # library
+SPDX-License-Identifier: GPL-3.0-or-later    # programs
+```
+
+## Why version 3 and not 2.1
+
+Agora's stack links `libagora-core` and `libagora-dispatch`, which are Apache-2.0
+extractions of Apple's swift-corelibs. Apache-2.0 is compatible with GPL-3.0/LGPL-3.0
+only — it is incompatible with GPL-2.0 and LGPL-2.1. Version 3 is therefore the only
+copyleft the combined work can resolve as.
+
+## The system libraries this links, and their terms
+
+Core Audio's job is to talk to a sound server, and the servers are not ours:
+
+| library | licence | how it is linked |
+|---|---|---|
+| PipeWire (`libpipewire-0.3`) | MIT | dynamically |
+| ALSA (`libasound`) | LGPL-2.1-or-later | **dynamically only** — the rules allow LGPL only when dynamically linked, and no ALSA header appears in ours |
+| sndio | ISC | dynamically |
+
+None of them is vendored: each is a system library found by `pkg-config`, as the
+project rules require.
+
+## Apple's headers are a specification, not a source
+
+`tests/api/manifest-10.12.txt` is generated from `MacOSX10.12.sdk` and committed; the
+SDK itself never is, and no Apple text is copied into this repository. The manifest
+holds *facts* — symbol names, sizes, offsets, constant values — and the declarations in
+`CoreAudio/` are written here from them. See `PROVENANCE.md` and the plan
+(`../AUDIO-PLAN.md`).
