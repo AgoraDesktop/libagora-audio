@@ -66,7 +66,14 @@ find_program(FFMPEG_EXECUTABLE ffmpeg)
 if(FFMPEG_EXECUTABLE)
     set(_mpeg1 "${CMAKE_CURRENT_BINARY_DIR}/tone-mpeg1-stereo.mp3")
     set(_mpeg2 "${CMAKE_CURRENT_BINARY_DIR}/tone-mpeg2-mono.mp3")
-    set(_mp3_fixtures "${_mpeg1}" "${_mpeg2}")
+    # **A THIRD FIXTURE BECAUSE OF WHAT THE FIRST TWO COULD NOT REACH.** The Xing/Info tag lives in the file's first
+    # frame, which the parser reads AFTER walking the packet table — and the walk used to free the file's bytes first.
+    # For anything larger than glibc's 128 KiB `mmap` threshold that free UNMAPPED the block the parse then read, which
+    # is a segfault; the two tones above are 73 KB and 4 KB, stay on the heap, and opened happily. FORTY seconds at
+    # 192 kbit/s is about 961 KB, which is over the line (MEASURED: 481 KB survived, 961 KB did not — the threshold is
+    # dynamic, so the fixture is comfortably past it).
+    set(_mpeg1_long "${CMAKE_CURRENT_BINARY_DIR}/tone-mpeg1-long.mp3")
+    set(_mp3_fixtures "${_mpeg1}" "${_mpeg2}" "${_mpeg1_long}")
 
     if(NOT EXISTS "${_mpeg1}")
         execute_process(
@@ -86,6 +93,16 @@ if(FFMPEG_EXECUTABLE)
         if(NOT _mp3_status EQUAL 0)
             message(WARNING "libagora-audio: ffmpeg could not write ${_mpeg2}; the MP3 suite will skip")
             file(REMOVE "${_mpeg2}")
+        endif()
+    endif()
+    if(NOT EXISTS "${_mpeg1_long}")
+        execute_process(
+            COMMAND "${FFMPEG_EXECUTABLE}" -loglevel error -y -f lavfi
+                    -i "sine=frequency=440:duration=40" -ar 44100 -ac 2 -b:a 192k "${_mpeg1_long}"
+            RESULT_VARIABLE _mp3_status)
+        if(NOT _mp3_status EQUAL 0)
+            message(WARNING "libagora-audio: ffmpeg could not write ${_mpeg1_long}; the long-file case will skip")
+            file(REMOVE "${_mpeg1_long}")
         endif()
     endif()
 else()

@@ -1014,21 +1014,28 @@ int main(int argc, char **argv)
 {
 	int skipped = 0;
 
-	if (argc < 3) {
+	if (argc < 4) {
 		printf("skip  no fixtures (an MP3 is an encoder's output, and this configuration had no ffmpeg)\n");
 		return 77;
 	}
 
 	skipped += (fn_stream(argv[1], 44100.0, 2, 1152, 440.0, 3.0) == 77) ? 1 : 0;
 	skipped += (fn_stream(argv[2], 22050.0, 1, 576, 330.0, 2.0) == 77) ? 1 : 0;
+	/* **THE LONG ONE IS THE SIZE THAT USED TO CRASH.** The Xing/Info tag is read from the first frame AFTER the packet
+	 * table is walked, and the walk freed the file's bytes first: below 128 KiB glibc keeps the block on the heap and
+	 * the stale read still worked, and above it the block is `mmap`ed and the free unmapped it — MEASURED, a 1.2 MB
+	 * MP3 segfaulted in `fn_mpeg_xing_parse`. The threshold is dynamic — MEASURED, 481 KB survived and 961 KB did
+	 * not — so the fixture is forty seconds at 192 kbit/s, comfortably past it, and this leg opens a file whose bytes
+	 * the parser must still have. */
+	skipped += (fn_stream(argv[3], 44100.0, 2, 1152, 440.0, 40.0) == 77) ? 1 : 0;
 	/* A missing decoder is not a missing fixture: the container checks ran, and the legs below do not need one. */
 
-	if (skipped == 2) {
+	if (skipped == 3) {
 		printf("skip  no fixtures\n");
 		return 77;
 	}
 
-	if (skipped < 2) {
+	if (skipped < 3) {
 		/* **THE INCREMENTAL DOOR NEEDS NO DECODER**: it walks frame headers, so it is measured even on a build
 		 * with `-DAGORA_AUDIO_WITH_MPG123=OFF`. Only the legs that play audio are conditional. */
 		fn_stream_parse(argv[1], 44100.0, 2, 1152, 1, false);
@@ -1042,7 +1049,7 @@ int main(int argc, char **argv)
 		fn_refusals();
 	}
 
-	if (skipped < 2) {
+	if (skipped < 3) {
 		fn_stream_tag(argv[1]);
 		fn_stream_tag(argv[2]);
 	}

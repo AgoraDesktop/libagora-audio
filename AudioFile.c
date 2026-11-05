@@ -745,9 +745,13 @@ static OSStatus fn_mp3_parse(AudioFileID file)
 		position = frame.offset + (SInt64)frame.frame.size;
 	}
 
-	free(data);
-
+	/* **THE FILE'S BYTES OUTLIVE THE WALK, BECAUSE THE FIRST FRAME IS STILL READ BELOW.** The Xing/Info tag lives in
+	 * that frame, so freeing here left the parse reading a block that glibc had already unmapped — a USE AFTER FREE
+	 * that only fired on files big enough to be served by `mmap` (> 128 KiB, i.e. more than about five seconds at
+	 * 192 kbit/s): MEASURED, a 1.2 MB MP3 segfaulted in `fn_mpeg_xing_parse` while the suite's 73 KB fixtures opened
+	 * happily, which is why nothing caught it. The free is after the parse now. */
 	if (file->packet_count == 0) {
+		free(data);
 		return kAudioFileUnsupportedFileTypeError;
 	}
 
@@ -766,13 +770,17 @@ static OSStatus fn_mp3_parse(AudioFileID file)
 	{
 		fn_mpeg_xing tag;
 
-		if (fn_mpeg_xing_parse(data + file->packet_table[0].offset,
-		                       (UInt32)(file_size - file->packet_table[0].offset), &first.frame, &tag)
+		if (file->packet_table[0].offset >= 0 && file->packet_table[0].offset < file_size
+		    && fn_mpeg_xing_parse(data + file->packet_table[0].offset,
+		                          (UInt32)(file_size - file->packet_table[0].offset),
+		                          &first.frame, &tag)
 		    && tag.has_gapless) {
 			file->mpeg_priming = (SInt32)(first.frame.samples + tag.delay);
 			file->mpeg_remainder = (SInt32)tag.padding;
 		}
 	}
+
+	free(data);
 
 	file->data_offset = file->packet_table[0].offset;
 	file->data_bytes = (file->packet_table[file->packet_count - 1].offset
