@@ -47,16 +47,21 @@ find_package(Threads REQUIRED)
 set(_agora_include_dir "${CMAKE_BINARY_DIR}/agora-include")
 file(REMOVE_RECURSE "${_agora_include_dir}")
 file(MAKE_DIRECTORY "${_agora_include_dir}")
-foreach(_door CoreAudio)
+foreach(_door CoreAudio AudioToolbox)
   file(CREATE_LINK "${CMAKE_CURRENT_SOURCE_DIR}/${_door}" "${_agora_include_dir}/${_door}" SYMBOLIC)
 endforeach()
 
 add_library(Audio SHARED
-    "${CMAKE_CURRENT_SOURCE_DIR}/HostTime.c")
+    "${CMAKE_CURRENT_SOURCE_DIR}/HostTime.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/AudioFormat.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/AudioResampler.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/AudioConverter.c")
 
 set_target_properties(Audio PROPERTIES OUTPUT_NAME agora-audio)
 
 target_include_directories(Audio
+    PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}"
     PUBLIC
         "$<BUILD_INTERFACE:${_agora_include_dir}>"
         "$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>")
@@ -76,7 +81,7 @@ if(BUILD_TESTING)
     add_subdirectory(tests)
 endif()
 
-install(DIRECTORY CoreAudio DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+install(DIRECTORY CoreAudio AudioToolbox DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
         FILES_MATCHING PATTERN "*.h" PATTERN "*_internal.h" EXCLUDE)
 install(TARGETS Audio
     EXPORT AgoraAudioTargets

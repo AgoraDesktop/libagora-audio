@@ -25,6 +25,18 @@ target_link_libraries(api_cxx PRIVATE Audio)
 set_target_properties(api_cxx PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED YES)
 add_test(NAME api-cxx COMMAND api_cxx)
 
+add_executable(api_prototypes api/prototypes.c)
+target_link_libraries(api_prototypes PRIVATE Audio)
+add_test(NAME api-prototypes COMMAND api_prototypes)
+
+add_executable(format format.c)
+target_link_libraries(format PRIVATE Audio)
+add_test(NAME format COMMAND format)
+
+add_executable(converter converter.c)
+target_link_libraries(converter PRIVATE Audio m)
+add_test(NAME converter COMMAND converter)
+
 add_executable(hosttime hosttime.c)
 target_link_libraries(hosttime PRIVATE Audio)
 add_test(NAME hosttime COMMAND hosttime)
@@ -37,5 +49,5 @@ set(_agora_runtime_dirs
     "$<TARGET_FILE_DIR:CoreFoundation::CoreFoundation>")
 list(REMOVE_DUPLICATES _agora_runtime_dirs)
 string(REPLACE ";" ":" _agora_ld_path "${_agora_runtime_dirs}")
-set_tests_properties(api-layout api-macros api-cxx hosttime PROPERTIES
+set_tests_properties(api-layout api-macros api-cxx api-prototypes format converter hosttime PROPERTIES
     ENVIRONMENT "LD_LIBRARY_PATH=${_agora_ld_path}")

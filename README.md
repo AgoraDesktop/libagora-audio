@@ -15,21 +15,29 @@ or a prototype drifts. See [Provenance](#provenance) and `PROVENANCE.md`.
 
 ## Status
 
-**Phase 0 — the specification, the skeleton, and the first door. Measured on this machine.**
+**Phase 1, first half — the types, the clock, and conversion. Measured on this machine.**
 
 ```
 libagora-audio/CoreAudio/
     CoreAudio.h          the umbrella
     CoreAudioTypes.h     the structures, the time stamps, the flag vocabulary, the status codes
     HostTime.h           the host clock
+libagora-audio/AudioToolbox/
+    AudioToolbox.h       the umbrella
+    AudioFormat.h        the format property door
+    AudioConverter.h     format and sample-rate conversion
 HostTime.c               the host clock over clock_gettime(CLOCK_MONOTONIC)
+AudioFormat.c            the four properties answered, and the frame arithmetic behind them
+AudioResampler.c         the windowed-sinc, arbitrary-ratio interpolator
+AudioConverter.c         the three-step pipeline: float, resample, back out
 tools/refshim/           sixty lines of ours, so clang on Linux can parse Apple's headers
 tools/api-manifest.py    generates tests/api/manifest-10.12.txt from a MacOSX10.12.sdk
-tests/api/               the three identity gates, and the host clock's own suite
+tests/api/               the four identity gates
 ```
 
-The device layer (`CoreAudio/AudioHardware.h`), `AudioToolbox/` and `AudioUnit/` arrive with their phases;
-`../AUDIO-PLAN.md` §9 is the schedule and §6 the header-by-header commitment.
+Still to come in this phase: `AudioFile.h`, `AudioFileStream.h` and `ExtendedAudioFile.h` — the WAV, AIFF
+and CAF containers. Then the device layer (`CoreAudio/AudioHardware.h`), `AudioQueue`, `AudioServices` and
+`AudioUnit`; `../AUDIO-PLAN.md` §9 is the schedule and §6 the header-by-header commitment.
 
 ```
 $ readelf -d build/libagora-audio.so | grep -E 'NEEDED|RUNPATH'
@@ -37,6 +45,10 @@ $ readelf -d build/libagora-audio.so | grep -E 'NEEDED|RUNPATH'
   Shared library: [libc.so.6]
   Library runpath: [$ORIGIN]
 ```
+
+**Two constants the manifest corrected, which is why it exists:** the converter's stream-description
+selectors are `'acid'` and `'acod'` (not the `'acic'`/`'acoc'` they look like), and `AudioChannelLayout`
+has a `mNumberChannelDescriptions` field between the bitmap and the descriptions.
 
 No audio library is linked yet, and none will be until the HAL: PipeWire, ALSA and sndio are the *device
 seam*, not the API, and they stay out of every public header.
@@ -48,7 +60,8 @@ seam*, not the API, and they stay out of every public header.
 | `tests/api/layout.c` | a size, an alignment or a field offset — `_Static_assert`, from the manifest's numbers |
 | `tests/api/macros.c` | a constant's value and the flag-decoding macro, checked by value at run time |
 | `tests/api/compile-cxx.cpp` | headers that only compile as C: `extern "C"`, the inline helpers Apple ships |
-| `tests/api/manifest-10.12.txt` | the record itself: 13 records, 320 enumeration constants, 24 typedefs, 5 prototypes |
+| `tests/api/prototypes.c` | a changed parameter, a dropped `const`, a `UInt32 *` that became `UInt32` — 17 prototypes through pointers typed from the manifest |
+| `tests/api/manifest-10.12.txt` | the record itself: 28 records, 580 enumeration constants, 66 typedefs, 63 prototypes |
 
 The manifest is generated, never hand-edited:
 
@@ -78,6 +91,11 @@ manifest already holds every one of them.
   helpers.
 - **`hosttime`** — the clock advances, never goes backwards, reports its own frequency, and the two
   conversions are inverses; a 20 ms sleep is at least 15 ms of host time and less than 5 s.
+- **`format`** — the frame arithmetic a non-interleaved description needs (one channel, not all of them),
+  24 significant bits in a 4-byte container, the three layout questions, and four refusals by name.
+- **`converter`** — int16 → float32 → int16 **bit-exact on every value** (the scale is 2^15 both ways);
+  interleaved → non-interleaved keeps its channels; and 44.1 kHz → 48 kHz of a 1 kHz sine measures
+  **SNR 85.2 dB**, printed by the suite, with the threshold at the 60 dB a resampler has to clear.
 
 ## Build and run
 

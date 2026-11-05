@@ -5,8 +5,16 @@
 # record size, alignment and field offsets, enumeration values, typedefs, prototypes.
 # The SDK itself is never committed — only measurements of it.
 #
-# headers: CoreAudio/CoreAudioTypes.h CoreAudio/HostTime.h
-# framework headers staged: 9
+# headers: CoreAudio/CoreAudioTypes.h CoreAudio/HostTime.h AudioToolbox/AudioFormat.h AudioToolbox/AudioConverter.h AudioToolbox/AudioFile.h AudioToolbox/AudioFileStream.h AudioToolbox/ExtendedAudioFile.h
+# framework headers staged: 38
+
+[record] AudioBalanceFade
+  sizeof 24
+  align 8
+  field 0 mLeftRightBalance Float32
+  field 4 mBackFrontFade Float32
+  field 8 mType AudioBalanceFadeType
+  field 16 mChannelLayout const AudioChannelLayout * _Nonnull
 
 [record] AudioBuffer
   sizeof 16
@@ -20,6 +28,14 @@
   align 8
   field 0 mNumberBuffers UInt32
   field 8 mBuffers AudioBuffer[1]
+
+[record] AudioBytePacketTranslation
+  sizeof 24
+  align 8
+  field 0 mByte SInt64
+  field 8 mPacket SInt64
+  field 16 mByteOffsetInPacket UInt32
+  field 20 mFlags AudioBytePacketTranslationFlags
 
 [record] AudioChannelDescription
   sizeof 20
@@ -42,6 +58,120 @@
   field 0 mType OSType
   field 4 mSubType OSType
   field 8 mManufacturer OSType
+
+[record] AudioConverterPrimeInfo
+  sizeof 8
+  align 4
+  field 0 leadingFrames UInt32
+  field 4 trailingFrames UInt32
+
+[record] AudioFileMarker
+  sizeof 40
+  align 8
+  field 0 mFramePosition Float64
+  field 8 mName CFStringRef _Nullable
+  field 16 mMarkerID SInt32
+  field 20 mSMPTETime struct AudioFile_SMPTE_Time
+  field 20 mHours SInt8
+  field 21 mMinutes UInt8
+  field 22 mSeconds UInt8
+  field 23 mFrames UInt8
+  field 24 mSubFrameSampleOffset UInt32
+  field 28 mType UInt32
+  field 32 mReserved UInt16
+  field 34 mChannel UInt16
+
+[record] AudioFileMarkerList
+  sizeof 48
+  align 8
+  field 0 mSMPTE_TimeType UInt32
+  field 4 mNumberMarkers UInt32
+  field 8 mMarkers AudioFileMarker[1]
+
+[record] AudioFilePacketTableInfo
+  sizeof 16
+  align 8
+  field 0 mNumberValidFrames SInt64
+  field 8 mPrimingFrames SInt32
+  field 12 mRemainderFrames SInt32
+
+[record] AudioFileRegion
+  sizeof 64
+  align 8
+  field 0 mRegionID UInt32
+  field 8 mName CFStringRef _Nonnull
+  field 16 mFlags AudioFileRegionFlags
+  field 20 mNumberMarkers UInt32
+  field 24 mMarkers AudioFileMarker[1]
+
+[record] AudioFileRegionList
+  sizeof 72
+  align 8
+  field 0 mSMPTE_TimeType UInt32
+  field 4 mNumberRegions UInt32
+  field 8 mRegions AudioFileRegion[1]
+
+[record] AudioFileTypeAndFormatID
+  sizeof 8
+  align 4
+  field 0 mFileType AudioFileTypeID
+  field 4 mFormatID UInt32
+
+[record] AudioFile_SMPTE_Time
+  sizeof 8
+  align 4
+  field 0 mHours SInt8
+  field 1 mMinutes UInt8
+  field 2 mSeconds UInt8
+  field 3 mFrames UInt8
+  field 4 mSubFrameSampleOffset UInt32
+
+[record] AudioFormatInfo
+  sizeof 56
+  align 8
+  field 0 mASBD struct AudioStreamBasicDescription
+  field 0 mSampleRate Float64
+  field 8 mFormatID AudioFormatID
+  field 12 mFormatFlags AudioFormatFlags
+  field 16 mBytesPerPacket UInt32
+  field 20 mFramesPerPacket UInt32
+  field 24 mBytesPerFrame UInt32
+  field 28 mChannelsPerFrame UInt32
+  field 32 mBitsPerChannel UInt32
+  field 36 mReserved UInt32
+  field 40 mMagicCookie const void * _Nonnull
+  field 48 mMagicCookieSize UInt32
+
+[record] AudioFormatListItem
+  sizeof 48
+  align 8
+  field 0 mASBD struct AudioStreamBasicDescription
+  field 0 mSampleRate Float64
+  field 8 mFormatID AudioFormatID
+  field 12 mFormatFlags AudioFormatFlags
+  field 16 mBytesPerPacket UInt32
+  field 20 mFramesPerPacket UInt32
+  field 24 mBytesPerFrame UInt32
+  field 28 mChannelsPerFrame UInt32
+  field 32 mBitsPerChannel UInt32
+  field 36 mReserved UInt32
+  field 40 mChannelLayoutTag AudioChannelLayoutTag
+
+[record] AudioFramePacketTranslation
+  sizeof 24
+  align 8
+  field 0 mFrame SInt64
+  field 8 mPacket SInt64
+  field 16 mFrameOffsetInPacket UInt32
+
+[record] AudioPanningInfo
+  sizeof 32
+  align 8
+  field 0 mPanningMode AudioPanningMode
+  field 4 mCoordinateFlags UInt32
+  field 8 mCoordinates Float32[3]
+  field 20 mGainScale Float32
+  field 24 mOutputChannelMap const AudioChannelLayout * _Nonnull
 
 [record] AudioStreamBasicDescription
   sizeof 40
@@ -97,6 +227,26 @@
   field 16 mOutputData void * _Nonnull
   field 24 mOutputDataSize UInt32
 
+[record] ExtendedAudioFormatInfo
+  sizeof 64
+  align 8
+  field 0 mASBD struct AudioStreamBasicDescription
+  field 0 mSampleRate Float64
+  field 8 mFormatID AudioFormatID
+  field 12 mFormatFlags AudioFormatFlags
+  field 16 mBytesPerPacket UInt32
+  field 20 mFramesPerPacket UInt32
+  field 24 mBytesPerFrame UInt32
+  field 28 mChannelsPerFrame UInt32
+  field 32 mBitsPerChannel UInt32
+  field 36 mReserved UInt32
+  field 40 mMagicCookie const void * _Nonnull
+  field 48 mMagicCookieSize UInt32
+  field 52 mClassDescription struct AudioClassDescription
+  field 52 mType OSType
+  field 56 mSubType OSType
+  field 60 mManufacturer OSType
+
 [record] SMPTETime
   sizeof 24
   align 4
@@ -130,6 +280,8 @@
 [constant] kAppleLosslessFormatFlag_20BitSourceData = 2
 [constant] kAppleLosslessFormatFlag_24BitSourceData = 3
 [constant] kAppleLosslessFormatFlag_32BitSourceData = 4
+[constant] kAudioBalanceFadeType_EqualPower = 1
+[constant] kAudioBalanceFadeType_MaxUnityGain = 0
 [constant] kAudioChannelBit_Center = 4
 [constant] kAudioChannelBit_CenterSurround = 256
 [constant] kAudioChannelBit_LFEScreen = 8
@@ -349,6 +501,188 @@
 [constant] kAudioChannelLayoutTag_UseChannelBitmap = 65536
 [constant] kAudioChannelLayoutTag_UseChannelDescriptions = 0
 [constant] kAudioChannelLayoutTag_XY = 6881282
+[constant] kAudioConverterApplicableEncodeBitRates = 1634034290
+[constant] kAudioConverterApplicableEncodeSampleRates = 1634038642
+[constant] kAudioConverterAvailableEncodeBitRates = 1986355826
+[constant] kAudioConverterAvailableEncodeChannelLayoutTags = 1634034540
+[constant] kAudioConverterAvailableEncodeSampleRates = 1986360178
+[constant] kAudioConverterChannelMap = 1667788144
+[constant] kAudioConverterCodecQuality = 1667527029
+[constant] kAudioConverterCompressionMagicCookie = 1668114275
+[constant] kAudioConverterCurrentInputStreamDescription = 1633904996
+[constant] kAudioConverterCurrentOutputStreamDescription = 1633906532
+[constant] kAudioConverterDecompressionMagicCookie = 1684891491
+[constant] kAudioConverterEncodeAdjustableSampleRate = 1634366322
+[constant] kAudioConverterEncodeBitRate = 1651663220
+[constant] kAudioConverterErr_BadPropertySizeError = 561211770
+[constant] kAudioConverterErr_FormatNotSupported = 1718449215
+[constant] kAudioConverterErr_InputSampleRateOutOfRange = 560558962
+[constant] kAudioConverterErr_InvalidInputSize = 1768846202
+[constant] kAudioConverterErr_InvalidOutputSize = 1869902714
+[constant] kAudioConverterErr_OperationNotSupported = 1869627199
+[constant] kAudioConverterErr_OutputSampleRateOutOfRange = 560952178
+[constant] kAudioConverterErr_PropertyNotSupported = 1886547824
+[constant] kAudioConverterErr_RequiresPacketDescriptionsError = 561015652
+[constant] kAudioConverterErr_UnspecifiedError = 2003329396
+[constant] kAudioConverterInputChannelLayout = 1768123424
+[constant] kAudioConverterOutputChannelLayout = 1868786720
+[constant] kAudioConverterPrimeInfo = 1886546285
+[constant] kAudioConverterPrimeMethod = 1886547309
+[constant] kAudioConverterPropertyBitDepthHint = 1633903204
+[constant] kAudioConverterPropertyCalculateInputBufferSize = 1667850867
+[constant] kAudioConverterPropertyCalculateOutputBufferSize = 1668244083
+[constant] kAudioConverterPropertyDitherBitDepth = 1684171124
+[constant] kAudioConverterPropertyDithering = 1684632680
+[constant] kAudioConverterPropertyFormatList = 1718383476
+[constant] kAudioConverterPropertyInputCodecParameters = 1768121456
+[constant] kAudioConverterPropertyMaximumInputBufferSize = 2020172403
+[constant] kAudioConverterPropertyMaximumInputPacketSize = 2020175987
+[constant] kAudioConverterPropertyMaximumOutputPacketSize = 2020569203
+[constant] kAudioConverterPropertyMinimumInputBufferSize = 1835623027
+[constant] kAudioConverterPropertyMinimumOutputBufferSize = 1836016243
+[constant] kAudioConverterPropertyOutputCodecParameters = 1868784752
+[constant] kAudioConverterPropertySettings = 1633906803
+[constant] kAudioConverterQuality_High = 96
+[constant] kAudioConverterQuality_Low = 32
+[constant] kAudioConverterQuality_Max = 127
+[constant] kAudioConverterQuality_Medium = 64
+[constant] kAudioConverterQuality_Min = 0
+[constant] kAudioConverterSampleRateConverterAlgorithm = 1936876393
+[constant] kAudioConverterSampleRateConverterComplexity = 1936876385
+[constant] kAudioConverterSampleRateConverterComplexity_Linear = 1818848869
+[constant] kAudioConverterSampleRateConverterComplexity_Mastering = 1650553971
+[constant] kAudioConverterSampleRateConverterComplexity_MinimumPhase = 1835626096
+[constant] kAudioConverterSampleRateConverterComplexity_Normal = 1852797549
+[constant] kAudioConverterSampleRateConverterInitialPhase = 1936876400
+[constant] kAudioConverterSampleRateConverterQuality = 1936876401
+[constant] kAudioFile3GP2Type = 862416946
+[constant] kAudioFile3GPType = 862417008
+[constant] kAudioFileAAC_ADTSType = 1633973363
+[constant] kAudioFileAC3Type = 1633889587
+[constant] kAudioFileAIFCType = 1095321155
+[constant] kAudioFileAIFFType = 1095321158
+[constant] kAudioFileAMRType = 1634562662
+[constant] kAudioFileBadPropertySizeError = 561211770
+[constant] kAudioFileCAFType = 1667327590
+[constant] kAudioFileDoesNotAllow64BitDataSizeError = 1868981823
+[constant] kAudioFileEndOfFileError = -39
+[constant] kAudioFileFileNotFoundError = -43
+[constant] kAudioFileFlags_DontPageAlignAudioData = 2
+[constant] kAudioFileFlags_EraseFile = 1
+[constant] kAudioFileGlobalInfo_AllExtensions = 1634498676
+[constant] kAudioFileGlobalInfo_AllHFSTypeCodes = 1634231923
+[constant] kAudioFileGlobalInfo_AllMIMETypes = 1634560365
+[constant] kAudioFileGlobalInfo_AllUTIs = 1635087465
+[constant] kAudioFileGlobalInfo_AvailableFormatIDs = 1718446436
+[constant] kAudioFileGlobalInfo_AvailableStreamDescriptionsForFormat = 1935960420
+[constant] kAudioFileGlobalInfo_ExtensionsForType = 1717926004
+[constant] kAudioFileGlobalInfo_FileTypeName = 1718906477
+[constant] kAudioFileGlobalInfo_HFSTypeCodesForType = 1718118003
+[constant] kAudioFileGlobalInfo_MIMETypesForType = 1718446445
+[constant] kAudioFileGlobalInfo_ReadableTypes = 1634103910
+[constant] kAudioFileGlobalInfo_TypesForExtension = 1952807028
+[constant] kAudioFileGlobalInfo_TypesForHFSTypeCode = 1952999027
+[constant] kAudioFileGlobalInfo_TypesForMIMEType = 1953327469
+[constant] kAudioFileGlobalInfo_TypesForUTI = 1953854569
+[constant] kAudioFileGlobalInfo_UTIsForType = 1718973545
+[constant] kAudioFileGlobalInfo_WritableTypes = 1634105190
+[constant] kAudioFileInvalidChunkError = 1667787583
+[constant] kAudioFileInvalidFileError = 1685348671
+[constant] kAudioFileInvalidPacketOffsetError = 1885563711
+[constant] kAudioFileLoopDirection_Backward = 3
+[constant] kAudioFileLoopDirection_Forward = 1
+[constant] kAudioFileLoopDirection_ForwardAndBackward = 2
+[constant] kAudioFileLoopDirection_NoLooping = 0
+[constant] kAudioFileM4AType = 1832149350
+[constant] kAudioFileM4BType = 1832149606
+[constant] kAudioFileMP1Type = 1297106737
+[constant] kAudioFileMP2Type = 1297106738
+[constant] kAudioFileMP3Type = 1297106739
+[constant] kAudioFileMPEG4Type = 1836069990
+[constant] kAudioFileMarkerType_Generic = 0
+[constant] kAudioFileNextType = 1315264596
+[constant] kAudioFileNotOpenError = -38
+[constant] kAudioFileNotOptimizedError = 1869640813
+[constant] kAudioFileOperationNotSupportedError = 1869627199
+[constant] kAudioFilePermissionsError = 1886547263
+[constant] kAudioFilePositionError = -40
+[constant] kAudioFilePropertyAlbumArtwork = 1633776244
+[constant] kAudioFilePropertyAudioDataByteCount = 1650683508
+[constant] kAudioFilePropertyAudioDataPacketCount = 1885564532
+[constant] kAudioFilePropertyAudioTrackCount = 1635017588
+[constant] kAudioFilePropertyBitRate = 1651663220
+[constant] kAudioFilePropertyByteToPacket = 1652125803
+[constant] kAudioFilePropertyChannelLayout = 1668112752
+[constant] kAudioFilePropertyChunkIDs = 1667787108
+[constant] kAudioFilePropertyDataFormat = 1684434292
+[constant] kAudioFilePropertyDataFormatName = 1718512997
+[constant] kAudioFilePropertyDataOffset = 1685022310
+[constant] kAudioFilePropertyDeferSizeUpdates = 1685289589
+[constant] kAudioFilePropertyEstimatedDuration = 1701082482
+[constant] kAudioFilePropertyFileFormat = 1717988724
+[constant] kAudioFilePropertyFormatList = 1718383476
+[constant] kAudioFilePropertyFrameToPacket = 1718775915
+[constant] kAudioFilePropertyID3Tag = 1768174452
+[constant] kAudioFilePropertyInfoDictionary = 1768842863
+[constant] kAudioFilePropertyIsOptimized = 1869640813
+[constant] kAudioFilePropertyMagicCookieData = 1835493731
+[constant] kAudioFilePropertyMarkerList = 1835756659
+[constant] kAudioFilePropertyMaximumPacketSize = 1886616165
+[constant] kAudioFilePropertyPacketSizeUpperBound = 1886090594
+[constant] kAudioFilePropertyPacketTableInfo = 1886283375
+[constant] kAudioFilePropertyPacketToByte = 1886085753
+[constant] kAudioFilePropertyPacketToFrame = 1886086770
+[constant] kAudioFilePropertyRegionList = 1919380595
+[constant] kAudioFilePropertyReserveDuration = 1920168566
+[constant] kAudioFilePropertySourceBitDepth = 1935832164
+[constant] kAudioFilePropertyUseAudioTrack = 1969321067
+[constant] kAudioFileReadPermission = 1
+[constant] kAudioFileReadWritePermission = 3
+[constant] kAudioFileRegionFlag_LoopEnable = 1
+[constant] kAudioFileRegionFlag_PlayBackward = 4
+[constant] kAudioFileRegionFlag_PlayForward = 2
+[constant] kAudioFileSoundDesigner2Type = 1399075430
+[constant] kAudioFileStreamError_BadPropertySize = 561211770
+[constant] kAudioFileStreamError_DataUnavailable = 1836020325
+[constant] kAudioFileStreamError_DiscontinuityCantRecover = 1685283617
+[constant] kAudioFileStreamError_IllegalOperation = 1852797029
+[constant] kAudioFileStreamError_InvalidFile = 1685348671
+[constant] kAudioFileStreamError_InvalidPacketOffset = 1885563711
+[constant] kAudioFileStreamError_NotOptimized = 1869640813
+[constant] kAudioFileStreamError_UnspecifiedError = 2003334207
+[constant] kAudioFileStreamError_UnsupportedDataFormat = 1718449215
+[constant] kAudioFileStreamError_UnsupportedFileType = 1954115647
+[constant] kAudioFileStreamError_UnsupportedProperty = 1886681407
+[constant] kAudioFileStreamError_ValueUnknown = 1970170687
+[constant] kAudioFileStreamParseFlag_Discontinuity = 1
+[constant] kAudioFileStreamPropertyFlag_CacheProperty = 2
+[constant] kAudioFileStreamPropertyFlag_PropertyIsCached = 1
+[constant] kAudioFileStreamProperty_AudioDataByteCount = 1650683508
+[constant] kAudioFileStreamProperty_AudioDataPacketCount = 1885564532
+[constant] kAudioFileStreamProperty_AverageBytesPerPacket = 1633841264
+[constant] kAudioFileStreamProperty_BitRate = 1651663220
+[constant] kAudioFileStreamProperty_ByteToPacket = 1652125803
+[constant] kAudioFileStreamProperty_ChannelLayout = 1668112752
+[constant] kAudioFileStreamProperty_DataFormat = 1684434292
+[constant] kAudioFileStreamProperty_DataOffset = 1685022310
+[constant] kAudioFileStreamProperty_FileFormat = 1717988724
+[constant] kAudioFileStreamProperty_FormatList = 1718383476
+[constant] kAudioFileStreamProperty_FrameToPacket = 1718775915
+[constant] kAudioFileStreamProperty_InfoDictionary = 1768842863
+[constant] kAudioFileStreamProperty_MagicCookieData = 1835493731
+[constant] kAudioFileStreamProperty_MaximumPacketSize = 1886616165
+[constant] kAudioFileStreamProperty_PacketSizeUpperBound = 1886090594
+[constant] kAudioFileStreamProperty_PacketTableInfo = 1886283375
+[constant] kAudioFileStreamProperty_PacketToByte = 1886085753
+[constant] kAudioFileStreamProperty_PacketToFrame = 1886086770
+[constant] kAudioFileStreamProperty_ReadyToProducePackets = 1919247481
+[constant] kAudioFileStreamSeekFlag_OffsetIsEstimated = 1
+[constant] kAudioFileUnspecifiedError = 2003334207
+[constant] kAudioFileUnsupportedDataFormatError = 1718449215
+[constant] kAudioFileUnsupportedFileTypeError = 1954115647
+[constant] kAudioFileUnsupportedPropertyError = 1886681407
+[constant] kAudioFileWAVEType = 1463899717
+[constant] kAudioFileWritePermission = 2
 [constant] kAudioFormat60958AC3 = 1667326771
 [constant] kAudioFormatAC3 = 1633889587
 [constant] kAudioFormatAES3 = 1634038579
@@ -358,6 +692,8 @@
 [constant] kAudioFormatAppleIMA4 = 1768775988
 [constant] kAudioFormatAppleLossless = 1634492771
 [constant] kAudioFormatAudible = 1096107074
+[constant] kAudioFormatBadPropertySizeError = 561211770
+[constant] kAudioFormatBadSpecifierSizeError = 561213539
 [constant] kAudioFormatDVIIntelIMA = 1836253201
 [constant] kAudioFormatEnhancedAC3 = 1700998451
 [constant] kAudioFormatFlagIsAlignedHigh = 16
@@ -392,11 +728,53 @@
 [constant] kAudioFormatMPEGLayer3 = 778924083
 [constant] kAudioFormatMicrosoftGSM = 1836253233
 [constant] kAudioFormatParameterValueStream = 1634760307
+[constant] kAudioFormatProperty_ASBDFromESDS = 1702064996
+[constant] kAudioFormatProperty_ASBDFromMPEGPacket = 1633971568
+[constant] kAudioFormatProperty_AreChannelLayoutsEquivalent = 1667786097
+[constant] kAudioFormatProperty_AvailableEncodeBitRates = 1634034290
+[constant] kAudioFormatProperty_AvailableEncodeChannelLayoutTags = 1634034540
+[constant] kAudioFormatProperty_AvailableEncodeNumberChannels = 1635151459
+[constant] kAudioFormatProperty_AvailableEncodeSampleRates = 1634038642
+[constant] kAudioFormatProperty_BalanceFade = 1650551910
+[constant] kAudioFormatProperty_BitmapForLayoutTag = 1651340391
+[constant] kAudioFormatProperty_ChannelLayoutForBitmap = 1668116578
+[constant] kAudioFormatProperty_ChannelLayoutForTag = 1668116588
+[constant] kAudioFormatProperty_ChannelLayoutFromESDS = 1702060908
+[constant] kAudioFormatProperty_ChannelLayoutHash = 1667786849
+[constant] kAudioFormatProperty_ChannelLayoutName = 1819242093
+[constant] kAudioFormatProperty_ChannelLayoutSimpleName = 1819504237
+[constant] kAudioFormatProperty_ChannelMap = 1667788144
+[constant] kAudioFormatProperty_ChannelName = 1668178285
+[constant] kAudioFormatProperty_ChannelShortName = 1668509293
+[constant] kAudioFormatProperty_DecodeFormatIDs = 1633904998
+[constant] kAudioFormatProperty_Decoders = 1635148901
+[constant] kAudioFormatProperty_EncodeFormatIDs = 1633906534
+[constant] kAudioFormatProperty_Encoders = 1635149166
+[constant] kAudioFormatProperty_FirstPlayableFormatFromList = 1718642284
+[constant] kAudioFormatProperty_FormatInfo = 1718449257
+[constant] kAudioFormatProperty_FormatIsEncrypted = 1668446576
+[constant] kAudioFormatProperty_FormatIsExternallyFramed = 1717925990
+[constant] kAudioFormatProperty_FormatIsVBR = 1719034482
+[constant] kAudioFormatProperty_FormatList = 1718383476
+[constant] kAudioFormatProperty_FormatName = 1718509933
+[constant] kAudioFormatProperty_ID3TagSize = 1768174451
+[constant] kAudioFormatProperty_ID3TagToDictionary = 1768174436
+[constant] kAudioFormatProperty_MatrixMixMap = 1835884912
+[constant] kAudioFormatProperty_NumberOfChannelsForLayout = 1852008557
+[constant] kAudioFormatProperty_OutputFormatList = 1868983411
+[constant] kAudioFormatProperty_PanningMatrix = 1885433453
+[constant] kAudioFormatProperty_TagForChannelLayout = 1668116596
+[constant] kAudioFormatProperty_TagsForNumberOfChannels = 1952540515
+[constant] kAudioFormatProperty_ValidateChannelLayout = 1986093932
 [constant] kAudioFormatQDesign = 1363430723
 [constant] kAudioFormatQDesign2 = 1363430706
 [constant] kAudioFormatQUALCOMM = 1365470320
 [constant] kAudioFormatTimeCode = 1953066341
 [constant] kAudioFormatULaw = 1970037111
+[constant] kAudioFormatUnknownFormatError = 560360820
+[constant] kAudioFormatUnspecifiedError = 2003329396
+[constant] kAudioFormatUnsupportedDataFormatError = 1718449215
+[constant] kAudioFormatUnsupportedPropertyError = 1886547824
 [constant] kAudioFormatiLBC = 1768710755
 [constant] kAudioTimeStampHostTimeValid = 2
 [constant] kAudioTimeStampNothingValid = 0
@@ -412,6 +790,36 @@
 [constant] kAudio_ParamError = -50
 [constant] kAudio_TooManyFilesOpenError = -42
 [constant] kAudio_UnimplementedError = -4
+[constant] kBytePacketTranslationFlag_IsEstimate = 1
+[constant] kConverterPrimeMethod_None = 2
+[constant] kConverterPrimeMethod_Normal = 1
+[constant] kConverterPrimeMethod_Pre = 0
+[constant] kDitherAlgorithm_NoiseShaping = 2
+[constant] kDitherAlgorithm_TPDF = 1
+[constant] kExtAudioFileError_AsyncWriteBufferOverflow = -66570
+[constant] kExtAudioFileError_AsyncWriteTooLarge = -66569
+[constant] kExtAudioFileError_InvalidChannelMap = -66564
+[constant] kExtAudioFileError_InvalidDataFormat = -66566
+[constant] kExtAudioFileError_InvalidOperationOrder = -66565
+[constant] kExtAudioFileError_InvalidProperty = -66561
+[constant] kExtAudioFileError_InvalidPropertySize = -66562
+[constant] kExtAudioFileError_InvalidSeek = -66568
+[constant] kExtAudioFileError_MaxPacketSizeUnknown = -66567
+[constant] kExtAudioFileError_NonPCMClientFormat = -66563
+[constant] kExtAudioFileProperty_AudioConverter = 1633906294
+[constant] kExtAudioFileProperty_AudioFile = 1634101612
+[constant] kExtAudioFileProperty_ClientChannelLayout = 1667460207
+[constant] kExtAudioFileProperty_ClientDataFormat = 1667657076
+[constant] kExtAudioFileProperty_ClientMaxPacketSize = 1668116595
+[constant] kExtAudioFileProperty_CodecManufacturer = 1668112750
+[constant] kExtAudioFileProperty_ConverterConfig = 1633903462
+[constant] kExtAudioFileProperty_FileChannelLayout = 1717791855
+[constant] kExtAudioFileProperty_FileDataFormat = 1717988724
+[constant] kExtAudioFileProperty_FileLengthFrames = 593916525
+[constant] kExtAudioFileProperty_FileMaxPacketSize = 1718448243
+[constant] kExtAudioFileProperty_IOBuffer = 1768907366
+[constant] kExtAudioFileProperty_IOBufferSizeBytes = 1768907379
+[constant] kExtAudioFileProperty_PacketTable = 2020635753
 [constant] kLinearPCMFormatFlagIsAlignedHigh = 16
 [constant] kLinearPCMFormatFlagIsBigEndian = 2
 [constant] kLinearPCMFormatFlagIsFloat = 1
@@ -431,6 +839,8 @@
 [constant] kMPEG4Object_CELP = 8
 [constant] kMPEG4Object_HVXC = 9
 [constant] kMPEG4Object_TwinVQ = 7
+[constant] kPanningMode_SoundField = 3
+[constant] kPanningMode_VectorBasedPanning = 4
 [constant] kSMPTETimeRunning = 2
 [constant] kSMPTETimeType2398 = 11
 [constant] kSMPTETimeType24 = 0
@@ -447,8 +857,12 @@
 [constant] kSMPTETimeUnknown = 0
 [constant] kSMPTETimeValid = 1
 
+[typedef] AudioBalanceFade = struct AudioBalanceFade
+[typedef] AudioBalanceFadeType = UInt32
 [typedef] AudioBuffer = struct AudioBuffer
 [typedef] AudioBufferList = struct AudioBufferList
+[typedef] AudioBytePacketTranslation = struct AudioBytePacketTranslation
+[typedef] AudioBytePacketTranslationFlags = UInt32
 [typedef] AudioChannelBitmap = UInt32
 [typedef] AudioChannelCoordinateIndex = UInt32
 [typedef] AudioChannelDescription = struct AudioChannelDescription
@@ -457,8 +871,43 @@
 [typedef] AudioChannelLayout = struct AudioChannelLayout
 [typedef] AudioChannelLayoutTag = UInt32
 [typedef] AudioClassDescription = struct AudioClassDescription
+[typedef] AudioConverterComplexInputDataProc = OSStatus (*)(AudioConverterRef _Nonnull, UInt32 * _Nonnull, AudioBufferList * _Nonnull, AudioStreamPacketDescription * _Nullable * _Nullable, void * _Nullable)
+[typedef] AudioConverterInputDataProc = OSStatus (*)(AudioConverterRef _Nonnull, UInt32 * _Nonnull, void * _Nonnull * _Nonnull, void * _Nullable)
+[typedef] AudioConverterPrimeInfo = struct AudioConverterPrimeInfo
+[typedef] AudioConverterPropertyID = UInt32
+[typedef] AudioConverterRef = struct OpaqueAudioConverter *
+[typedef] AudioFileFlags = UInt32
+[typedef] AudioFileID = struct OpaqueAudioFileID *
+[typedef] AudioFileMarker = struct AudioFileMarker
+[typedef] AudioFileMarkerList = struct AudioFileMarkerList
+[typedef] AudioFilePacketTableInfo = struct AudioFilePacketTableInfo
+[typedef] AudioFilePermissions = SInt8
+[typedef] AudioFilePropertyID = UInt32
+[typedef] AudioFileRegion = struct AudioFileRegion
+[typedef] AudioFileRegionFlags = UInt32
+[typedef] AudioFileRegionList = struct AudioFileRegionList
+[typedef] AudioFileStreamID = struct OpaqueAudioFileStreamID *
+[typedef] AudioFileStreamParseFlags = UInt32
+[typedef] AudioFileStreamPropertyFlags = UInt32
+[typedef] AudioFileStreamPropertyID = UInt32
+[typedef] AudioFileStreamSeekFlags = UInt32
+[typedef] AudioFileStream_PacketsProc = void (*)(void * _Nonnull, UInt32, UInt32, const void * _Nonnull, AudioStreamPacketDescription * _Nonnull)
+[typedef] AudioFileStream_PropertyListenerProc = void (*)(void * _Nonnull, AudioFileStreamID _Nonnull, AudioFileStreamPropertyID, AudioFileStreamPropertyFlags * _Nonnull)
+[typedef] AudioFileTypeAndFormatID = struct AudioFileTypeAndFormatID
+[typedef] AudioFileTypeID = UInt32
+[typedef] AudioFile_GetSizeProc = SInt64 (*)(void * _Nonnull)
+[typedef] AudioFile_ReadProc = OSStatus (*)(void * _Nonnull, SInt64, UInt32, void * _Nonnull, UInt32 * _Nonnull)
+[typedef] AudioFile_SMPTE_Time = struct AudioFile_SMPTE_Time
+[typedef] AudioFile_SetSizeProc = OSStatus (*)(void * _Nonnull, SInt64)
+[typedef] AudioFile_WriteProc = OSStatus (*)(void * _Nonnull, SInt64, UInt32, const void * _Nonnull, UInt32 * _Nonnull)
 [typedef] AudioFormatFlags = UInt32
 [typedef] AudioFormatID = UInt32
+[typedef] AudioFormatInfo = struct AudioFormatInfo
+[typedef] AudioFormatListItem = struct AudioFormatListItem
+[typedef] AudioFormatPropertyID = UInt32
+[typedef] AudioFramePacketTranslation = struct AudioFramePacketTranslation
+[typedef] AudioPanningInfo = struct AudioPanningInfo
+[typedef] AudioPanningMode = UInt32
 [typedef] AudioSampleType = Float32
 [typedef] AudioStreamBasicDescription = struct AudioStreamBasicDescription
 [typedef] AudioStreamPacketDescription = struct AudioStreamPacketDescription
@@ -467,6 +916,9 @@
 [typedef] AudioUnitSampleType = Float32
 [typedef] AudioValueRange = struct AudioValueRange
 [typedef] AudioValueTranslation = struct AudioValueTranslation
+[typedef] ExtAudioFilePropertyID = UInt32
+[typedef] ExtAudioFileRef = struct OpaqueExtAudioFile *
+[typedef] ExtendedAudioFormatInfo = struct ExtendedAudioFormatInfo
 [typedef] MPEG4ObjectID = long
 [typedef] SMPTETime = struct SMPTETime
 [typedef] SMPTETimeFlags = UInt32
@@ -474,6 +926,64 @@
 
 [function] AudioConvertHostTimeToNanos = UInt64 (UInt64)
 [function] AudioConvertNanosToHostTime = UInt64 (UInt64)
+[function] AudioConverterConvertBuffer = OSStatus (AudioConverterRef _Nonnull, UInt32, const void * _Nonnull, UInt32 * _Nonnull, void * _Nonnull)
+[function] AudioConverterConvertComplexBuffer = OSStatus (AudioConverterRef _Nonnull, UInt32, const AudioBufferList * _Nonnull, AudioBufferList * _Nonnull)
+[function] AudioConverterDispose = OSStatus (AudioConverterRef _Nonnull)
+[function] AudioConverterFillBuffer = OSStatus (AudioConverterRef _Nonnull, AudioConverterInputDataProc _Nonnull, void * _Nullable, UInt32 * _Nonnull, void * _Nonnull)
+[function] AudioConverterFillComplexBuffer = OSStatus (AudioConverterRef _Nonnull, AudioConverterComplexInputDataProc _Nonnull, void * _Nullable, UInt32 * _Nonnull, AudioBufferList * _Nonnull, AudioStreamPacketDescription * _Nullable)
+[function] AudioConverterGetProperty = OSStatus (AudioConverterRef _Nonnull, AudioConverterPropertyID, UInt32 * _Nonnull, void * _Nonnull)
+[function] AudioConverterGetPropertyInfo = OSStatus (AudioConverterRef _Nonnull, AudioConverterPropertyID, UInt32 * _Nullable, Boolean * _Nullable)
+[function] AudioConverterNew = OSStatus (const AudioStreamBasicDescription * _Nonnull, const AudioStreamBasicDescription * _Nonnull, AudioConverterRef  _Nullable * _Nonnull)
+[function] AudioConverterNewSpecific = OSStatus (const AudioStreamBasicDescription * _Nonnull, const AudioStreamBasicDescription * _Nonnull, UInt32, const AudioClassDescription * _Nonnull, AudioConverterRef  _Nullable * _Nonnull)
+[function] AudioConverterReset = OSStatus (AudioConverterRef _Nonnull)
+[function] AudioConverterSetProperty = OSStatus (AudioConverterRef _Nonnull, AudioConverterPropertyID, UInt32, const void * _Nonnull)
+[function] AudioFileClose = OSStatus (AudioFileID _Nonnull)
+[function] AudioFileCountUserData = OSStatus (AudioFileID _Nonnull, UInt32, UInt32 * _Nonnull)
+[function] AudioFileCreate = OSStatus (const struct FSRef * _Nonnull, CFStringRef _Nonnull, AudioFileTypeID, const AudioStreamBasicDescription * _Nonnull, AudioFileFlags, struct FSRef * _Nonnull, AudioFileID  _Nullable * _Nonnull)
+[function] AudioFileCreateWithURL = OSStatus (CFURLRef _Nonnull, AudioFileTypeID, const AudioStreamBasicDescription * _Nonnull, AudioFileFlags, AudioFileID  _Nullable * _Nonnull)
+[function] AudioFileGetGlobalInfo = OSStatus (AudioFilePropertyID, UInt32, void * _Nullable, UInt32 * _Nonnull, void * _Nonnull)
+[function] AudioFileGetGlobalInfoSize = OSStatus (AudioFilePropertyID, UInt32, void * _Nullable, UInt32 * _Nonnull)
+[function] AudioFileGetProperty = OSStatus (AudioFileID _Nonnull, AudioFilePropertyID, UInt32 * _Nonnull, void * _Nonnull)
+[function] AudioFileGetPropertyInfo = OSStatus (AudioFileID _Nonnull, AudioFilePropertyID, UInt32 * _Nullable, UInt32 * _Nullable)
+[function] AudioFileGetUserData = OSStatus (AudioFileID _Nonnull, UInt32, UInt32, UInt32 * _Nonnull, void * _Nonnull)
+[function] AudioFileGetUserDataSize = OSStatus (AudioFileID _Nonnull, UInt32, UInt32, UInt32 * _Nonnull)
+[function] AudioFileInitialize = OSStatus (const struct FSRef * _Nonnull, AudioFileTypeID, const AudioStreamBasicDescription * _Nonnull, AudioFileFlags, AudioFileID  _Nullable * _Nonnull)
+[function] AudioFileInitializeWithCallbacks = OSStatus (void * _Nonnull, AudioFile_ReadProc _Nonnull, AudioFile_WriteProc _Nonnull, AudioFile_GetSizeProc _Nonnull, AudioFile_SetSizeProc _Nonnull, AudioFileTypeID, const AudioStreamBasicDescription * _Nonnull, AudioFileFlags, AudioFileID  _Nullable * _Nonnull)
+[function] AudioFileOpen = OSStatus (const struct FSRef * _Nonnull, AudioFilePermissions, AudioFileTypeID, AudioFileID  _Nullable * _Nonnull)
+[function] AudioFileOpenURL = OSStatus (CFURLRef _Nonnull, AudioFilePermissions, AudioFileTypeID, AudioFileID  _Nullable * _Nonnull)
+[function] AudioFileOpenWithCallbacks = OSStatus (void * _Nonnull, AudioFile_ReadProc _Nonnull, AudioFile_WriteProc _Nullable, AudioFile_GetSizeProc _Nonnull, AudioFile_SetSizeProc _Nullable, AudioFileTypeID, AudioFileID  _Nullable * _Nonnull)
+[function] AudioFileOptimize = OSStatus (AudioFileID _Nonnull)
+[function] AudioFileReadBytes = OSStatus (AudioFileID _Nonnull, Boolean, SInt64, UInt32 * _Nonnull, void * _Nonnull)
+[function] AudioFileReadPacketData = OSStatus (AudioFileID _Nonnull, Boolean, UInt32 * _Nonnull, AudioStreamPacketDescription * _Nullable, SInt64, UInt32 * _Nonnull, void * _Nullable)
+[function] AudioFileReadPackets = OSStatus (AudioFileID _Nonnull, Boolean, UInt32 * _Nonnull, AudioStreamPacketDescription * _Nullable, SInt64, UInt32 * _Nonnull, void * _Nullable)
+[function] AudioFileRemoveUserData = OSStatus (AudioFileID _Nonnull, UInt32, UInt32)
+[function] AudioFileSetProperty = OSStatus (AudioFileID _Nonnull, AudioFilePropertyID, UInt32, const void * _Nonnull)
+[function] AudioFileSetUserData = OSStatus (AudioFileID _Nonnull, UInt32, UInt32, UInt32, const void * _Nonnull)
+[function] AudioFileStreamClose = OSStatus (AudioFileStreamID _Nonnull)
+[function] AudioFileStreamGetProperty = OSStatus (AudioFileStreamID _Nonnull, AudioFileStreamPropertyID, UInt32 * _Nonnull, void * _Nonnull)
+[function] AudioFileStreamGetPropertyInfo = OSStatus (AudioFileStreamID _Nonnull, AudioFileStreamPropertyID, UInt32 * _Nullable, Boolean * _Nullable)
+[function] AudioFileStreamOpen = OSStatus (void * _Nullable, AudioFileStream_PropertyListenerProc _Nonnull, AudioFileStream_PacketsProc _Nonnull, AudioFileTypeID, AudioFileStreamID  _Nullable * _Nonnull)
+[function] AudioFileStreamParseBytes = OSStatus (AudioFileStreamID _Nonnull, UInt32, const void * _Nonnull, AudioFileStreamParseFlags)
+[function] AudioFileStreamSeek = OSStatus (AudioFileStreamID _Nonnull, SInt64, SInt64 * _Nonnull, AudioFileStreamSeekFlags * _Nonnull)
+[function] AudioFileStreamSetProperty = OSStatus (AudioFileStreamID _Nonnull, AudioFileStreamPropertyID, UInt32, const void * _Nonnull)
+[function] AudioFileWriteBytes = OSStatus (AudioFileID _Nonnull, Boolean, SInt64, UInt32 * _Nonnull, const void * _Nonnull)
+[function] AudioFileWritePackets = OSStatus (AudioFileID _Nonnull, Boolean, UInt32, const AudioStreamPacketDescription * _Nullable, SInt64, UInt32 * _Nonnull, const void * _Nonnull)
+[function] AudioFormatGetProperty = OSStatus (AudioFormatPropertyID, UInt32, const void * _Nullable, UInt32 * _Nullable, void * _Nullable)
+[function] AudioFormatGetPropertyInfo = OSStatus (AudioFormatPropertyID, UInt32, const void * _Nullable, UInt32 * _Nonnull)
 [function] AudioGetCurrentHostTime = UInt64 ()
 [function] AudioGetHostClockFrequency = Float64 ()
 [function] AudioGetHostClockMinimumTimeDelta = UInt32 ()
+[function] ExtAudioFileCreateNew = OSStatus (const struct FSRef * _Nonnull, CFStringRef _Nonnull, AudioFileTypeID, const AudioStreamBasicDescription * _Nonnull, const AudioChannelLayout * _Nullable, ExtAudioFileRef  _Nullable * _Nonnull)
+[function] ExtAudioFileCreateWithURL = OSStatus (CFURLRef _Nonnull, AudioFileTypeID, const AudioStreamBasicDescription * _Nonnull, const AudioChannelLayout * _Nullable, UInt32, ExtAudioFileRef  _Nullable * _Nonnull)
+[function] ExtAudioFileDispose = OSStatus (ExtAudioFileRef _Nonnull)
+[function] ExtAudioFileGetProperty = OSStatus (ExtAudioFileRef _Nonnull, ExtAudioFilePropertyID, UInt32 * _Nonnull, void * _Nonnull)
+[function] ExtAudioFileGetPropertyInfo = OSStatus (ExtAudioFileRef _Nonnull, ExtAudioFilePropertyID, UInt32 * _Nullable, Boolean * _Nullable)
+[function] ExtAudioFileOpen = OSStatus (const struct FSRef * _Nonnull, ExtAudioFileRef  _Nullable * _Nonnull)
+[function] ExtAudioFileOpenURL = OSStatus (CFURLRef _Nonnull, ExtAudioFileRef  _Nullable * _Nonnull)
+[function] ExtAudioFileRead = OSStatus (ExtAudioFileRef _Nonnull, UInt32 * _Nonnull, AudioBufferList * _Nonnull)
+[function] ExtAudioFileSeek = OSStatus (ExtAudioFileRef _Nonnull, SInt64)
+[function] ExtAudioFileSetProperty = OSStatus (ExtAudioFileRef _Nonnull, ExtAudioFilePropertyID, UInt32, const void * _Nonnull)
+[function] ExtAudioFileTell = OSStatus (ExtAudioFileRef _Nonnull, SInt64 * _Nonnull)
+[function] ExtAudioFileWrapAudioFileID = OSStatus (AudioFileID _Nonnull, Boolean, ExtAudioFileRef  _Nullable * _Nonnull)
+[function] ExtAudioFileWrite = OSStatus (ExtAudioFileRef _Nonnull, UInt32, const AudioBufferList * _Nonnull)
+[function] ExtAudioFileWriteAsync = OSStatus (ExtAudioFileRef _Nonnull, UInt32, const AudioBufferList * _Nullable)

@@ -16,7 +16,7 @@
  * bug that no amount of type checking catches.
  */
 
-#include <CoreAudio/CoreAudio.h>
+#include <AudioToolbox/AudioToolbox.h>
 
 #include <stdio.h>
 
@@ -118,6 +118,41 @@ int main(void)
 		fn_check("TestAudioFormatNativeEndian(native BE)", TestAudioFormatNativeEndian(native_be) != 0, 0);
 		fn_check("TestAudioFormatNativeEndian(non-PCM)", TestAudioFormatNativeEndian(native_other) != 0, 0);
 	}
+
+	/* --- AudioToolbox: the selectors and the errors clients switch on. ----- */
+	fn_check("kAudioFormatProperty_FormatInfo", kAudioFormatProperty_FormatInfo, 1718449257);
+	fn_check("kAudioFormatProperty_NumberOfChannelsForLayout",
+	         kAudioFormatProperty_NumberOfChannelsForLayout, 1852008557);
+	fn_check("kAudioFormatProperty_ChannelLayoutForTag",
+	         kAudioFormatProperty_ChannelLayoutForTag, 1668116588);
+	fn_check("kAudioFormatUnsupportedPropertyError", kAudioFormatUnsupportedPropertyError, 1886547824);
+	fn_check("kAudioFormatBadPropertySizeError", kAudioFormatBadPropertySizeError, 561211770);
+	fn_check("kAudioFormatBadSpecifierSizeError", kAudioFormatBadSpecifierSizeError, 561213539);
+	fn_check("kAudioFormatUnsupportedDataFormatError", kAudioFormatUnsupportedDataFormatError, 1718449215);
+	fn_check("kAudioFormatUnknownFormatError", kAudioFormatUnknownFormatError, 560360820);
+
+	fn_check("kAudioConverterErr_FormatNotSupported", kAudioConverterErr_FormatNotSupported, 1718449215);
+	fn_check("kAudioConverterErr_OperationNotSupported",
+	         kAudioConverterErr_OperationNotSupported, 1869627199);
+	fn_check("kAudioConverterErr_PropertyNotSupported",
+	         kAudioConverterErr_PropertyNotSupported, 1886547824);
+	fn_check("kAudioConverterErr_UnspecifiedError", kAudioConverterErr_UnspecifiedError, 2003329396);
+	fn_check("kAudioConverterErr_InputSampleRateOutOfRange",
+	         kAudioConverterErr_InputSampleRateOutOfRange, 560558962);
+	fn_check("kAudioConverterQuality_Max", kAudioConverterQuality_Max, 0x7F);
+	fn_check("kAudioConverterQuality_High", kAudioConverterQuality_High, 0x60);
+	fn_check("kAudioConverterQuality_Min", kAudioConverterQuality_Min, 0);
+	fn_check("kAudioConverterSampleRateConverterComplexity_Linear",
+	         kAudioConverterSampleRateConverterComplexity_Linear, 1818848869);
+	fn_check("kAudioConverterSampleRateConverterComplexity_Normal",
+	         kAudioConverterSampleRateConverterComplexity_Normal, 1852797549);
+	fn_check("kConverterPrimeMethod_Pre", kConverterPrimeMethod_Pre, 0);
+	fn_check("kConverterPrimeMethod_None", kConverterPrimeMethod_None, 2);
+	fn_check("kAudioConverterCurrentInputStreamDescription",
+	         kAudioConverterCurrentInputStreamDescription, 1633904996);   /* 'acid' */
+	fn_check("kAudioConverterCurrentOutputStreamDescription",
+	         kAudioConverterCurrentOutputStreamDescription, 1633906532);  /* 'acod' */
+	fn_check("kAudioConverterChannelMap", kAudioConverterChannelMap, 1667788144);
 
 	if (g_failures != 0) {
 		fprintf(stderr, "api-macros: %d failure(s)\n", g_failures);

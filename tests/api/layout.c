@@ -18,6 +18,7 @@
  */
 
 #include <CoreAudio/CoreAudio.h>
+#include <AudioToolbox/AudioToolbox.h>
 
 #include <stddef.h>
 
@@ -94,6 +95,20 @@ AGORA_FIELD(AudioChannelLayout, mChannelDescriptions, 12);
 AGORA_FIELD(AudioChannelDescription, mChannelLabel, 0);
 AGORA_FIELD(AudioChannelDescription, mChannelFlags, 4);
 AGORA_FIELD(AudioChannelDescription, mCoordinates, 8);
+
+/* --- the AudioToolbox doors' records --------------------------------------- */
+AGORA_SIZE(AudioFormatInfo, 56);
+AGORA_SIZE(AudioFormatListItem, 48);
+AGORA_SIZE(AudioConverterPrimeInfo, 8);
+AGORA_ALIGN(AudioFormatInfo, 8);
+AGORA_ALIGN(AudioFormatListItem, 8);
+AGORA_FIELD(AudioFormatInfo, mASBD, 0);
+AGORA_FIELD(AudioFormatInfo, mMagicCookie, 40);
+AGORA_FIELD(AudioFormatInfo, mMagicCookieSize, 48);
+AGORA_FIELD(AudioFormatListItem, mASBD, 0);
+AGORA_FIELD(AudioFormatListItem, mChannelLayoutTag, 40);
+AGORA_FIELD(AudioConverterPrimeInfo, leadingFrames, 0);
+AGORA_FIELD(AudioConverterPrimeInfo, trailingFrames, 4);
 
 /* --- packet descriptions and translations ---------------------------------- */
 AGORA_FIELD(AudioStreamPacketDescription, mStartOffset, 0);
