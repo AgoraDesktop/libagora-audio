@@ -99,8 +99,27 @@ CF_ENUM(AudioFileTypeID)
     kAudioFileMP3Type   = 'MPG3'
 };
 
+/* **THE GAPLESS DECLARATION, WHICH IS THE ONE THING A COMPRESSED FILE KNOWS THAT ITS PACKETS DO NOT.** An MPEG
+ * encoder pads the start and the end of the stream so that its frames divide evenly; the padding is not audio, and the
+ * decoder strips it (measured: exactly, against `ffmpeg`). A file that declares it — in the LAME/ffmpeg extension of
+ * its first frame — answers this record, and `mNumberValidFrames + mPrimingFrames + mRemainderFrames` equals the
+ * frames the packets hold, which is the invariant Apple documents.
+ *
+ * Order is `packets x samples - valid - remainder` for the priming, and the *frame that carries the Xing tag* counts as
+ * priming too: it is the encoder's declaration, not a bar of music. That is why a 3 s file's priming is 1 728 (1152 +
+ * 576) rather than the encoder's 576 alone.
+ *
+ * **THE SELECTOR IS `'pnfo'`, NOT `'pkin'`** — the manifest's value, and another of the constants that reads wrong. */
+typedef struct AudioFilePacketTableInfo
+{
+    SInt64  mNumberValidFrames;
+    SInt32  mPrimingFrames;
+    SInt32  mRemainderFrames;
+} AudioFilePacketTableInfo;
+
 /* The property selectors this door answers. Everything else in Apple's table — album artwork, ID3, chunk
- * lists, the packet tables — belongs to the phase that reads or writes the thing it names. */
+ * lists, `kAudioFilePropertyPacketToFrame`/`FrameToPacket` — belongs to the phase that reads or writes the thing it
+ * names. (The two mapping doors would be arithmetic over this record, and nothing has asked for them.) */
 CF_ENUM(AudioFilePropertyID)
 {
     kAudioFilePropertyFileFormat            = 'ffmt',
@@ -109,7 +128,8 @@ CF_ENUM(AudioFilePropertyID)
     kAudioFilePropertyAudioDataByteCount    = 'bcnt',
     kAudioFilePropertyAudioDataPacketCount  = 'pcnt',
     kAudioFilePropertyEstimatedDuration     = 'edur',
-    kAudioFilePropertyIsOptimized           = 'optm'
+    kAudioFilePropertyIsOptimized           = 'optm',
+    kAudioFilePropertyPacketTableInfo       = 'pnfo'
 };
 
 extern OSStatus

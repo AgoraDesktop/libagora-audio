@@ -174,6 +174,7 @@ int main(void)
 	fn_check("kAudioFilePropertyDataOffset", kAudioFilePropertyDataOffset, 1685022310);
 	fn_check("kAudioFilePropertyAudioDataByteCount", kAudioFilePropertyAudioDataByteCount, 1650683508);
 	fn_check("kAudioFilePropertyAudioDataPacketCount", kAudioFilePropertyAudioDataPacketCount, 1885564532);
+	fn_check("kAudioFilePropertyPacketTableInfo", kAudioFilePropertyPacketTableInfo, 1886283375);  /* 'pkin' */
 	fn_check("kExtAudioFileProperty_ClientDataFormat", kExtAudioFileProperty_ClientDataFormat, 1667657076);
 	fn_check("kAudioFileStreamProperty_DataFormat", kAudioFileStreamProperty_DataFormat, 1684434292);
 	fn_check("kAudioFileStreamProperty_DataOffset", kAudioFileStreamProperty_DataOffset, 1685022310);

@@ -388,6 +388,21 @@ OSStatus ExtAudioFileGetProperty(ExtAudioFileRef inExtAudioFile, ExtAudioFilePro
 			}
 		}
 
+		/* **A FILE THAT DECLARED ITS GAPLESS TRIM REPORTS THE AUDIO, NOT THE PADDING.** Without this the length of a
+		 * 3 s MP3 is 3.06 s and a seek bar ends before the music does; the packet table is where the encoder wrote
+		 * the difference, and `mNumberValidFrames` is the same number the decoder produces (measured equal on both
+		 * fixtures). A file with no declaration keeps the container's count, which is the honest answer for a file
+		 * cut out of a longer one. */
+		{
+			AudioFilePacketTableInfo table;
+			UInt32 table_size = sizeof(table);
+
+			if (AudioFileGetProperty(inExtAudioFile->file, kAudioFilePropertyPacketTableInfo, &table_size,
+			                         &table) == 0) {
+				frames = table.mNumberValidFrames;
+			}
+		}
+
 		*(SInt64 *)outPropertyData = frames;
 		*ioPropertyDataSize = sizeof(SInt64);
 		return 0;

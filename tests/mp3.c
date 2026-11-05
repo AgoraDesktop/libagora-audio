@@ -215,9 +215,38 @@ static int fn_stream(const char *path, double rate, UInt32 channels, UInt32 samp
 	}
 
 	size = sizeof(length);
-	fn_check("the length is the frames the container counted",
+	fn_check("the length is reported",
 	         ExtAudioFileGetProperty(ext, kExtAudioFileProperty_FileLengthFrames, &size, &length) == 0
-	         && length == (SInt64)packets * samples_per_frame);
+	         && length > 0);
+
+	/* **THE LENGTH IS THE AUDIO, NOT THE PADDING, AND THE TWO NUMBERS STILL ADD UP.** The file door reports the
+	 * gapless trim the encoder declared; the invariant Apple documents is that valid + priming + remainder is what
+	 * the packets hold, which is exactly the container's count. */
+	{
+		AudioFilePacketTableInfo table;
+		UInt32 table_size = sizeof(table);
+		CFURLRef file_url = fn_url(path);
+		AudioFileID measured = NULL;
+
+		if (AudioFileOpenURL(file_url, kAudioFileReadPermission, 0, &measured) == 0) {
+			fn_check("the file declares its gapless trim",
+			         AudioFileGetProperty(measured, kAudioFilePropertyPacketTableInfo, &table_size, &table) == 0);
+			printf("      length %lld = valid %lld + priming %d + remainder %d, packets hold %lld\n",
+			       (long long)length, (long long)table.mNumberValidFrames, (int)table.mPrimingFrames,
+			       (int)table.mRemainderFrames, (long long)packets * (long long)samples_per_frame);
+			fn_check("the valid frames are the reported length", table.mNumberValidFrames == length);
+			fn_check("valid + priming + remainder is what the packets hold",
+			         table.mNumberValidFrames + table.mPrimingFrames + table.mRemainderFrames
+			         == (SInt64)packets * (SInt64)samples_per_frame);
+			fn_check("the priming is the tag's frame plus the encoder's delay",
+			         table.mPrimingFrames > (SInt32)samples_per_frame
+			         && table.mPrimingFrames < (SInt32)samples_per_frame + 1153);
+			fn_check("the remainder is padding, and smaller than a frame's worth of it",
+			         table.mRemainderFrames >= 0 && table.mRemainderFrames < 2000);
+			AudioFileClose(measured);
+		}
+		CFRelease(file_url);
+	}
 
 	{
 		OSStatus read_status = 0;
@@ -225,6 +254,9 @@ static int fn_stream(const char *path, double rate, UInt32 channels, UInt32 samp
 		long long expected = (long long)(seconds * rate + 0.5);
 
 		fn_check("the whole stream decodes", read_status == 0 && decoded > 0);
+		/* **THE DECODER AND THE LENGTH ARE THE SAME NUMBER**, which is the measurement that makes the trim honest:
+		 * one comes from the tag's declaration, the other from libmpg123's own gapless handling. */
+		fn_check("the decoded audio is exactly the reported length", decoded == length);
 		/* **THE TRIMMED LENGTH IS EXACTLY THE TONE'S**, because libmpg123 applies the encoder's own gapless
 		 * declaration. The container's count is larger by the padding and is asserted above, separately. */
 		fn_check("the decoder gives back exactly the audio that was encoded", decoded == expected);

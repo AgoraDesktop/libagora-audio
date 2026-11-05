@@ -219,7 +219,24 @@ bool fn_mpeg_xing_parse(const uint8_t *frame, UInt32 available, const fn_mpeg_fr
 		memcpy(out->toc, frame + cursor, sizeof(out->toc));
 		out->has_toc = true;
 	}
-	/* The quality field (flag 8) is not read: it is an encoder's own opinion, and nothing here decides anything
-	 * with it. */
+	cursor += (flags & 4u) ? 100u : 0u;
+
+	/* The quality field (flag 8) is not read: it is an encoder's own opinion. It does, however, occupy four bytes
+	 * before the encoder's extension block, and getting that wrong reads the extension one field too early. */
+	cursor += (flags & 8u) ? 4u : 0u;
+
+	/* **THE LAME EXTENSION IS WHERE THE GAPLESS ANSWER LIVES.** After the encoder's nine-character name, the
+	 * revision, the lowpass, two replay-gain pairs, the flags/ATH byte and the bitrate byte, three bytes hold the
+	 * encoder delay and the padding in twelves bits each. `Lavc` is ffmpeg's spelling of the same block and the same
+	 * arithmetic — measured: 576 delay + 756 padding on a 3 s 44.1 kHz file whose decoder produces exactly
+	 * 116 x 1152 - 576 - 756 frames. */
+	if (available >= cursor + 24
+	    && (memcmp(frame + cursor, "LAME", 4) == 0 || memcmp(frame + cursor, "Lavc", 4) == 0)) {
+		const uint8_t *g = frame + cursor + 21;
+
+		out->delay = ((UInt32)g[0] << 4) | ((UInt32)g[1] >> 4);
+		out->padding = (((UInt32)g[1] & 0x0Fu) << 8) | (UInt32)g[2];
+		out->has_gapless = true;
+	}
 	return true;
 }

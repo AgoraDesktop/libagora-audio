@@ -117,6 +117,13 @@ AGORA_FIELD(AudioFormatListItem, mChannelLayoutTag, 40);
 AGORA_FIELD(AudioConverterPrimeInfo, leadingFrames, 0);
 AGORA_FIELD(AudioConverterPrimeInfo, trailingFrames, 4);
 
+/* --- the gapless declaration a compressed file answers ---------------------- */
+AGORA_SIZE(AudioFilePacketTableInfo, 16);
+AGORA_ALIGN(AudioFilePacketTableInfo, 8);
+AGORA_FIELD(AudioFilePacketTableInfo, mNumberValidFrames, 0);
+AGORA_FIELD(AudioFilePacketTableInfo, mPrimingFrames, 8);
+AGORA_FIELD(AudioFilePacketTableInfo, mRemainderFrames, 12);
+
 /* --- packet descriptions and translations ---------------------------------- */
 AGORA_FIELD(AudioStreamPacketDescription, mStartOffset, 0);
 AGORA_FIELD(AudioStreamPacketDescription, mVariableFramesInPacket, 8);

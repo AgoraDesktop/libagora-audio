@@ -52,6 +52,12 @@ struct OpaqueAudioFileID {
 	UInt32 packet_count;
 	UInt32 packet_capacity;
 
+	/* **THE ENCODER'S GAPLESS DECLARATION, WHEN THE FIRST FRAME CARRIES ONE.** The streams' padding is not audio, and
+	 * `mValidFrames` is what a duration should be; -1 priming means "this file declared nothing", which is the
+	 * answer for every PCM container and for an MPEG file cut out of a longer one. */
+	SInt32 mpeg_priming;
+	SInt32 mpeg_remainder;
+
 	bool   dirty;         /* a header still needs its sizes patched */
 
 	/* Where each container keeps the numbers to patch. -1 when not applicable. */
@@ -714,6 +720,9 @@ static OSStatus fn_mp3_parse(AudioFileID file)
 
 	memset(&first, 0, sizeof(first));
 
+	file->mpeg_priming = -1;
+	file->mpeg_remainder = -1;
+
 	while (position + 4 <= file_size) {
 		fn_mp3_frame frame;
 
@@ -749,6 +758,21 @@ static OSStatus fn_mp3_parse(AudioFileID file)
 	file->asbd.mFramesPerPacket = first.frame.samples;
 	/* Bytes per packet and per frame stay ZERO: an MPEG frame's length is in its header, and a description that
 	 * claimed a constant would be lying about every VBR file. */
+
+	/* **THE FIRST FRAME MAY DECLARE THE GAPLESS TRIM, AND ONLY THE FIRST FRAME CAN.** It sits in the frame the walk
+	 * started at, which is still in memory here; the frame that carries it is the encoder's declaration rather than
+	 * audio, so it counts as priming along with the encoder's own delay. That is the arithmetic the decoder applies,
+	 * measured frame for frame against `ffmpeg`'s output. */
+	{
+		fn_mpeg_xing tag;
+
+		if (fn_mpeg_xing_parse(data + file->packet_table[0].offset,
+		                       (UInt32)(file_size - file->packet_table[0].offset), &first.frame, &tag)
+		    && tag.has_gapless) {
+			file->mpeg_priming = (SInt32)(first.frame.samples + tag.delay);
+			file->mpeg_remainder = (SInt32)tag.padding;
+		}
+	}
 
 	file->data_offset = file->packet_table[0].offset;
 	file->data_bytes = (file->packet_table[file->packet_count - 1].offset
@@ -1180,6 +1204,14 @@ OSStatus AudioFileGetPropertyInfo(AudioFileID inAudioFile, AudioFilePropertyID i
 	case kAudioFilePropertyIsOptimized:
 		if (outDataSize) { *outDataSize = sizeof(UInt32); }
 		return 0;
+	case kAudioFilePropertyPacketTableInfo:
+		/* A file that declared no trim has no table to report, and saying so is better than reporting zeros: a
+		 * zero priming with a zero remainder is a file whose every frame is audio. */
+		if (inAudioFile != NULL && inAudioFile->mpeg_priming < 0) {
+			return kAudioFileUnsupportedPropertyError;
+		}
+		if (outDataSize) { *outDataSize = sizeof(AudioFilePacketTableInfo); }
+		return 0;
 	default:
 		return kAudioFileUnsupportedPropertyError;
 	}
@@ -1240,6 +1272,28 @@ OSStatus AudioFileGetProperty(AudioFileID inAudioFile, AudioFilePropertyID inPro
 		if (*ioDataSize < sizeof(UInt32)) { return kAudioFileBadPropertySizeError; }
 		*(UInt32 *)outPropertyData = inAudioFile->dirty ? 0 : 1;
 		*ioDataSize = sizeof(UInt32);
+		return 0;
+	}
+
+	case kAudioFilePropertyPacketTableInfo: {
+		/* **THE THREE NUMBERS ADD UP TO THE PACKETS, WHICH IS THE INVARIANT A CLIENT CHECKS.** valid is what a
+		 * duration should be; priming and remainder are what the decoder throws away at each end. */
+		AudioFilePacketTableInfo info;
+
+		if (inAudioFile->type != kAudioFileMP3Type || inAudioFile->mpeg_priming < 0) {
+			return kAudioFileUnsupportedPropertyError;
+		}
+		if (*ioDataSize < sizeof(AudioFilePacketTableInfo)) { return kAudioFileBadPropertySizeError; }
+
+		info.mPrimingFrames = inAudioFile->mpeg_priming;
+		info.mRemainderFrames = inAudioFile->mpeg_remainder;
+		info.mNumberValidFrames = (SInt64)inAudioFile->frames - (SInt64)info.mPrimingFrames
+		                        - (SInt64)info.mRemainderFrames;
+		if (info.mNumberValidFrames < 0) {
+			info.mNumberValidFrames = 0;
+		}
+		*(AudioFilePacketTableInfo *)outPropertyData = info;
+		*ioDataSize = sizeof(AudioFilePacketTableInfo);
 		return 0;
 	}
 

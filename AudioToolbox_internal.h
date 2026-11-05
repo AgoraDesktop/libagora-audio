@@ -100,6 +100,9 @@ typedef struct fn_mpeg_xing {
 	UInt32  bytes;	/* the audio's length, the tag's own frame included */
 	bool    has_toc;
 	uint8_t toc[100];
+	bool    has_gapless;	/* the LAME/ffmpeg extension declared the encoder's delay and padding */
+	UInt32  delay;		/* samples the encoder padded at the start, to be discarded on playback */
+	UInt32  padding;	/* samples it padded at the end */
 } fn_mpeg_xing;
 
 /* Parse the tag out of the FIRST frame of a stream. False when the frame carries none (the common case for a file

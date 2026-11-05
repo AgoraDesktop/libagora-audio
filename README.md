@@ -130,12 +130,16 @@ interpolation of the table's hundredths otherwise, flagged `kAudioFileStreamSeek
 what it is. A stream whose first frame is not the tag — a file cut out of a longer one — has no table, and the door says
 so: `ValueUnknown` for the count and `kAudioFileStreamError_IllegalOperation` for the seek.
 
-Two limits are worth naming. Writing is refused: there is no encoder, and `AudioFileCreateWithURL` answers
-`kAudioFileUnsupportedFileTypeError` for `kAudioFileMP3Type`. And the tag's own gapless declaration — the encoder delay
-and padding it records next to the count — is not applied: the counts here are the container's, which are larger than
-the audio the decoder produces, exactly as the file door's are (see the seek paragraph above). The fixtures the suite
-reads are `ffmpeg`'s output, written when the suite is configured; with no `ffmpeg` the test reports a skip instead of
-disappearing.
+**And the length a client reads is the audio's, not the container's.** The same tag carries the encoder's delay and
+padding, so `kAudioFilePropertyPacketTableInfo` answers three numbers that add up — valid, priming, remainder — and
+`kExtAudioFileProperty_FileLengthFrames` reports the first. A three-second file is 132 300 frames, which is exactly what
+the decoder produces and what `ffmpeg` reports, where the packets hold 134 784. The frame carrying the tag counts as
+priming: it is the encoder's declaration, not a bar of music. A file cut out of a longer one declares nothing, so it
+keeps the container's count and no table — the honest answer, and the one a trimmed length would guess at.
+
+Writing is refused: there is no encoder, and `AudioFileCreateWithURL` answers `kAudioFileUnsupportedFileTypeError` for
+`kAudioFileMP3Type`. The fixtures the suite reads are `ffmpeg`'s output, written when the suite is configured; with no
+`ffmpeg` the test reports a skip instead of disappearing.
 
 **Phase 6a — sndio, the BSDs' server: WRITTEN, COMPILED HERE, NOT MEASURED HERE.** `AudioHardware-sndio.c` is
 the fourth backend and the one this tree cannot exercise where it is developed: `libsndio-dev` 1.10.0 is
