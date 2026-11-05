@@ -70,7 +70,19 @@ elseif(AGORA_AUDIO_WITH_PIPEWIRE STREQUAL "ON")
   message(FATAL_ERROR "libagora-audio: AGORA_AUDIO_WITH_PIPEWIRE=ON but pkg-config found no libpipewire-0.3")
 endif()
 
-if(NOT ALSA_FOUND AND NOT PIPEWIRE_FOUND)
+# sndio is the BSDs' sound server: the fourth backend, and the only one this tree can BUILD without being able
+# to RUN it (a Linux machine has libsndio but no sndiod). The pkg-config name is plain `sndio`.
+set(AGORA_AUDIO_WITH_SNDIO AUTO CACHE STRING "Build the sndio backend (AUTO, ON, OFF)")
+if(PKG_CONFIG_FOUND AND NOT AGORA_AUDIO_WITH_SNDIO STREQUAL "OFF")
+  pkg_check_modules(SNDIO IMPORTED_TARGET sndio)
+endif()
+if(SNDIO_FOUND)
+  message(STATUS "libagora-audio: sndio backend (libsndio, written not measured on this platform)")
+elseif(AGORA_AUDIO_WITH_SNDIO STREQUAL "ON")
+  message(FATAL_ERROR "libagora-audio: AGORA_AUDIO_WITH_SNDIO=ON but pkg-config found no sndio")
+endif()
+
+if(NOT ALSA_FOUND AND NOT PIPEWIRE_FOUND AND NOT SNDIO_FOUND)
   message(STATUS "libagora-audio: no system audio backend (null only)")
 endif()
 find_package(Threads REQUIRED)
@@ -96,6 +108,7 @@ add_library(Audio SHARED
     "${CMAKE_CURRENT_SOURCE_DIR}/AudioHardware-null.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/AudioHardware-alsa.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/AudioHardware-pipewire.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/AudioHardware-sndio.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/AudioHardwareDeprecated.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/AudioQueue.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/AudioServices.c"
@@ -118,6 +131,11 @@ endif()
 if(PIPEWIRE_FOUND)
   target_compile_definitions(Audio PRIVATE AGORA_WITH_PIPEWIRE=1)
   target_link_libraries(Audio PRIVATE PkgConfig::PIPEWIRE)
+endif()
+
+if(SNDIO_FOUND)
+  target_compile_definitions(Audio PRIVATE AGORA_WITH_SNDIO=1)
+  target_link_libraries(Audio PRIVATE PkgConfig::SNDIO)
 endif()
 
 target_include_directories(Audio

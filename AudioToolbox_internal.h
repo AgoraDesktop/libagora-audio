@@ -131,6 +131,7 @@ typedef struct agora_driver {
 const agora_driver * fn_agora_driver_null(void);
 const agora_driver * fn_agora_driver_alsa(void);
 const agora_driver * fn_agora_driver_pipewire(void);
+const agora_driver * fn_agora_driver_sndio(void);
 
 /* The backend to use: `AGORA_AUDIO_DRIVER` if set; `NULL` here or no variable at all means "what this machine
  * would use by itself", which is PipeWire when its server answers and the null device otherwise. A suite calls

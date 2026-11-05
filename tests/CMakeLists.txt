@@ -65,6 +65,12 @@ if(PIPEWIRE_FOUND)
     add_test(NAME hal-pipewire COMMAND hal pipewire)
     set_tests_properties(hal-pipewire PROPERTIES SKIP_RETURN_CODE 77)
 endif()
+# sndio needs a `sndiod`; on a Linux box with libsndio-dev and no server this leg SKIPS, which is the honest
+# report for a backend that is written and compiled but not measured here.
+if(SNDIO_FOUND)
+    add_test(NAME hal-sndio COMMAND hal sndio)
+    set_tests_properties(hal-sndio PROPERTIES SKIP_RETURN_CODE 77)
+endif()
 
 add_executable(queue queue.c)
 target_link_libraries(queue PRIVATE Audio m dispatch)
@@ -101,6 +107,9 @@ if(ALSA_FOUND)
 endif()
 if(PIPEWIRE_FOUND)
     list(APPEND _agora_audio_tests hal-pipewire)
+endif()
+if(SNDIO_FOUND)
+    list(APPEND _agora_audio_tests hal-sndio)
 endif()
 set_tests_properties(${_agora_audio_tests} PROPERTIES
     ENVIRONMENT "LD_LIBRARY_PATH=${_agora_ld_path}")

@@ -107,11 +107,13 @@ static struct {
 
 static void fn_init(void);
 
-/* What a caller gets when it does not choose: the session's own server if one answers, and the null device
+/* What a caller gets when it does not choose: the session's own sound server if one answers, and the null device
  * otherwise. A property read cannot ask "would a stream work?" without opening one, so the probe is the device
- * count — a PipeWire driver that cannot reach its daemon describes no sinks, which is exactly the fallback
- * condition. ALSA is deliberately not in this chain: it describes a device whether or not a card exists, so
- * choosing it automatically would turn "no sound card" into "playback errors" on machines that have neither. */
+ * count — PipeWire describes no sinks without its daemon, and sndio opens no handle without its server, which is
+ * exactly the fallback condition for both. ALSA is deliberately not in this chain: it describes a device whether
+ * or not a card exists, so choosing it automatically would turn "no sound card" into "playback errors" on
+ * machines that have neither. The order is the platform's own: PipeWire on Linux, sndio on the BSDs, and either
+ * probe is a no-op where the server is not. */
 static const agora_driver *fn_driver_named(const char *name)
 {
 	if (name == NULL) {
@@ -126,15 +128,22 @@ static const agora_driver *fn_driver_named(const char *name)
 	if (strcmp(name, "pipewire") == 0) {
 		return fn_agora_driver_pipewire();
 	}
+	if (strcmp(name, "sndio") == 0) {
+		return fn_agora_driver_sndio();
+	}
 	return NULL;
 }
 
 static const agora_driver *fn_driver_default(void)
 {
 	const agora_driver *pipewire = fn_agora_driver_pipewire();
+	const agora_driver *sndio = fn_agora_driver_sndio();
 
 	if (pipewire != NULL && pipewire->device_count() > 0) {
 		return pipewire;
+	}
+	if (sndio != NULL && sndio->device_count() > 0) {
+		return sndio;
 	}
 	return fn_agora_driver_null();
 }

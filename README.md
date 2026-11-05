@@ -16,10 +16,11 @@ or a prototype drifts. See [Provenance](#provenance) and `PROVENANCE.md`.
 ## Status
 
 **Phase 3 and 5 complete — the types, the clock, format queries, conversion, the three containers, the device
-layer on three backends (`null`, ALSA and PipeWire), the units and their graph, and AUv3's object surface over
-them.** Measured on this machine: the null and ALSA legs of the HAL suite, the PipeWire leg against the
+layer on four backends (`null`, ALSA, PipeWire and sndio), the units and their graph, and AUv3's object surface
+over them.** Measured on this machine: the null and ALSA legs of the HAL suite, the PipeWire leg against the
 session server that is actually running here, and 24 576 frames of a 0.5 tone that server pulled in half a
-second.
+second. **`sndio` compiles and links here and is not measured here** — it is the BSDs' server and this machine
+has no `sndiod`; the label, and what would lift it, are in the phase note below.
 
 ```
 libagora-audio/CoreAudio/
@@ -55,6 +56,7 @@ AudioHardware.c          the object table, the property switch, the listeners, t
 AudioHardware-null.c     one device that exists everywhere, with a real data thread
 AudioHardware-alsa.c     the second backend: `snd_pcm_open` on a name, paced by its own writes
 AudioHardware-pipewire.c the third: the session's own server, its sinks, and one stream per started device
+AudioHardware-sndio.c    the fourth: the BSDs' sound server (written and compiled; not measured here)
 AudioHardwareDeprecated.c  the pre-10.7 doors, translated into the object API
 AudioQueue.c             buffers in, played frames out, over the device layer
 AudioServices.c          a file and a number; the alert is generated, not vendored
@@ -95,8 +97,22 @@ mixer for the frames the server's buffer holds and hands them back. It is delibe
 callback (`PW_STREAM_FLAG_RT_PROCESS`): the mixer takes a lock, so a late buffer is the smaller problem. The
 node shows up in `pw-dump` as `Stream/Output/Audio` named `agora-audio-output`, routed to the sink it was given.
 
-Still to come: `sndio` for the BSDs, the `AudioQueue` input side and timelines, `AUGraph` sub-graphs, and the
-rest of `AudioFormat`'s selectors. `../AUDIO-PLAN.md` §9 is the schedule and §6 the
+**Phase 6a — sndio, the BSDs' server: WRITTEN, COMPILED HERE, NOT MEASURED HERE.** `AudioHardware-sndio.c` is
+the fourth backend and the one this tree cannot exercise where it is developed: `libsndio-dev` 1.10.0 is
+installed on this machine, so the file is compiled and linked against the real header and library and its
+`hal-sndio` leg runs and **skips (exit 77)** — no `sndiod` is listening. What a BSD run would measure is what a
+real server does with the parameters: the sample format it grants (`sio_getpar` after `sio_setpar`, refused by
+name rather than played as noise when it is not 32-bit signed native-endian), the buffer it paces with, and
+whether `sio_write`'s blocking back-pressure behaves as documented. Until then the README, the CMake line and
+`AUDIO-PLAN.md` §5 all say "written, not measured" rather than implying the others are the same.
+
+sndio has **no float format** — `struct sio_par` describes signed or unsigned integers of 8, 16, 24 or 32 bits —
+so the driver converts the mixer's interleaved float32 to 32-bit signed in its own thread, clamping rather than
+wrapping at the rails. That is the one conversion the other three backends do not need, and it is the
+interface's, not a choice.
+
+Still to come: the `AudioQueue` input side and timelines, `AUGraph` sub-graphs, and the rest of `AudioFormat`'s
+selectors. `../AUDIO-PLAN.md` §9 is the schedule and §6 the
 header-by-header commitment.
 
 The three containers are ours rather than a library's: WAV is a little-endian chunk list, AIFF is a
@@ -122,12 +138,14 @@ public header. Foundation is PUBLIC on the Objective-C doors for the same reason
 naming `AUAudioUnit` needs `NSObject` — and that is why this component sits above `libagora-base` in
 `release/components.conf`.
 
-**Which backend a client gets without asking.** `AGORA_AUDIO_DRIVER` names one (`null`, `alsa`, `pipewire`) and
-is the test-and-debug door. With no variable set, the library asks PipeWire whether its server answers — a
-driver that cannot reach its daemon describes no sinks — and uses the null device if not. ALSA is not in that
+**Which backend a client gets without asking.** `AGORA_AUDIO_DRIVER` names one (`null`, `alsa`, `pipewire`,
+`sndio`) and is the test-and-debug door. With no variable set, the library asks the two *server* backends in the
+order a platform has them — PipeWire, then sndio — and uses the null device if neither answers. Both are probed
+the same way, because both are clients of a server: PipeWire describes no sinks without its daemon, and sndio
+opens no handle without its server, so "the probe found nothing" is the fallback condition. ALSA is not in that
 chain on purpose: it describes a device whether or not a card exists, so choosing it automatically would turn
-"no sound card" on this machine into "playback errors" on a machine that has neither. On a desktop session
-this means a beep reaches the speakers; in a container it means silence and no error.
+"no sound card" on this machine into "playback errors" on a machine that has neither. On a desktop session this
+means a beep reaches the speakers; in a container it means silence and no error.
 
 ```
 $ readelf -d build-prefix/lib/libagora-audio.so | grep -E 'NEEDED|RUNPATH'
@@ -196,7 +214,9 @@ skips, exit 77, when there is none):
   library. **A third leg runs the same suite on `pipewire`**, against the live session server: it asserts what
   a server can promise (a sink exists, the default one is first in the device list, the format is float32 PCM,
   the io procs are called) and skips the numbers the server chooses — rate, quantum, channel count, pacing —
-  with the suite naming which of the two it is measuring.
+  with the suite naming which of the two it is measuring. **A fourth leg is the same suite on `sndio`**, and on
+  this machine it reports the honest thing: `hal-sndio` skips (77), because the backend is compiled against
+  libsndio 1.10.0 and no `sndiod` is listening.
 - **`unit`** — the registry finds a built-in and does not invent a fourth; an output unit with a callback
   renders 0.5 and the device measures it; a converter turns int16 0.25 into float32 0.25; a two-bus mixer sums
   0.25 + 0.125 to **0.375**, and halving one bus's volume halves its contribution; and a graph of mixer → output
@@ -228,7 +248,7 @@ cmake -S . -B build -DCMAKE_C_COMPILER=/usr/bin/clang-19 \
       -DCMAKE_CXX_COMPILER=/usr/bin/clang++-19 \
       -DCMAKE_OBJC_COMPILER=/usr/bin/clang-19 \
       -DCMAKE_PREFIX_PATH=../build-prefix -DCMAKE_INSTALL_PREFIX=../build-prefix
-# -DAGORA_AUDIO_WITH_PIPEWIRE=OFF and -DAGORA_AUDIO_WITH_ALSA=OFF each drop a backend; both default to AUTO.
+# -DAGORA_AUDIO_WITH_{ALSA,PIPEWIRE,SNDIO}=OFF each drop a backend; all three default to AUTO.
 cmake --build build
 cd build && ctest --output-on-failure
 ```

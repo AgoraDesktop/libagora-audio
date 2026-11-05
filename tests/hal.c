@@ -428,10 +428,11 @@ int main(int argc, char *argv[])
 		}
 		g_driver = "alsa";
 		g_strict_timing = false;
-	} else if (argc > 1 && strcmp(argv[1], "pipewire") == 0) {
+	} else if (argc > 1 && (strcmp(argv[1], "pipewire") == 0 || strcmp(argv[1], "sndio") == 0)) {
 		/* A session server paces, mixes and negotiates: the numbers are its answer, not this library's, and
-		 * the pacing assertion is the only one that stays. */
-		g_driver = "pipewire";
+		 * the pacing assertion is the only one that stays. `sndio` is the same shape of client — its server
+		 * owns the device — so it is measured on the same terms. */
+		g_driver = argv[1];
 		g_strict_timing = false;
 		g_exact_numbers = false;
 	}
