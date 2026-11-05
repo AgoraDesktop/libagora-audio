@@ -168,7 +168,9 @@ what is left with silence — the path a caller writes a file through, and the o
 on a machine with no sound card at all.
 
 Still to come: the `AudioQueue` input side (there is no capture backend in the HAL — no driver opens a stream for
-reading — so the door refuses by name), processing taps, `AUGraph` sub-graphs (their Carbon doors are not declared), and
+reading — so the door refuses by name), processing taps (a tap sees the queue's audio in the *client's* format, and the
+device path converts straight from the client's buffers into the device's, so the render path needs a client-format
+intermediate before a tap can tap anything), `AUGraph` sub-graphs (their Carbon doors are not declared), and
 `AudioFormat`'s `kAudioFormatProperty_FormatList` (the constant is in the manifest but its specifier's shape is not, so
 the door stays refused rather than guessed). `../AUDIO-PLAN.md` §9 is the schedule and §6 the header-by-header
 commitment.
