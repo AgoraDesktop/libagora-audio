@@ -17,7 +17,7 @@
  * error code, just a crash somewhere else.
  */
 
-#include <CoreAudio/CoreAudio.h>
+#include <CoreAudio/AudioHardware.h>
 #include <AudioToolbox/AudioToolbox.h>
 
 #include <stddef.h>
@@ -95,6 +95,13 @@ AGORA_FIELD(AudioChannelLayout, mChannelDescriptions, 12);
 AGORA_FIELD(AudioChannelDescription, mChannelLabel, 0);
 AGORA_FIELD(AudioChannelDescription, mChannelFlags, 4);
 AGORA_FIELD(AudioChannelDescription, mCoordinates, 8);
+
+/* --- the HAL's object address, which every property call passes ------------ */
+AGORA_SIZE(AudioObjectPropertyAddress, 12);
+AGORA_ALIGN(AudioObjectPropertyAddress, 4);
+AGORA_FIELD(AudioObjectPropertyAddress, mSelector, 0);
+AGORA_FIELD(AudioObjectPropertyAddress, mScope, 4);
+AGORA_FIELD(AudioObjectPropertyAddress, mElement, 8);
 
 /* --- the AudioToolbox doors' records --------------------------------------- */
 AGORA_SIZE(AudioFormatInfo, 56);

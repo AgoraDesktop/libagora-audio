@@ -5,7 +5,7 @@
 # record size, alignment and field offsets, enumeration values, typedefs, prototypes.
 # The SDK itself is never committed — only measurements of it.
 #
-# headers: CoreAudio/CoreAudioTypes.h CoreAudio/HostTime.h AudioToolbox/AudioFormat.h AudioToolbox/AudioConverter.h AudioToolbox/AudioFile.h AudioToolbox/AudioFileStream.h AudioToolbox/ExtendedAudioFile.h
+# headers: CoreAudio/CoreAudioTypes.h CoreAudio/HostTime.h CoreAudio/AudioHardwareBase.h CoreAudio/AudioHardware.h AudioToolbox/AudioFormat.h AudioToolbox/AudioConverter.h AudioToolbox/AudioFile.h AudioToolbox/AudioFileStream.h AudioToolbox/ExtendedAudioFile.h
 # framework headers staged: 38
 
 [record] AudioBalanceFade
@@ -164,6 +164,20 @@
   field 8 mPacket SInt64
   field 16 mFrameOffsetInPacket UInt32
 
+[record] AudioHardwareIOProcStreamUsage
+  sizeof 16
+  align 8
+  field 0 mIOProc void * _Nonnull
+  field 8 mNumberStreams UInt32
+  field 12 mStreamIsOn UInt32[1]
+
+[record] AudioObjectPropertyAddress
+  sizeof 12
+  align 4
+  field 0 mSelector AudioObjectPropertySelector
+  field 4 mScope AudioObjectPropertyScope
+  field 8 mElement AudioObjectPropertyElement
+
 [record] AudioPanningInfo
   sizeof 32
   align 8
@@ -192,6 +206,23 @@
   field 0 mStartOffset SInt64
   field 8 mVariableFramesInPacket UInt32
   field 12 mDataByteSize UInt32
+
+[record] AudioStreamRangedDescription
+  sizeof 56
+  align 8
+  field 0 mFormat struct AudioStreamBasicDescription
+  field 0 mSampleRate Float64
+  field 8 mFormatID AudioFormatID
+  field 12 mFormatFlags AudioFormatFlags
+  field 16 mBytesPerPacket UInt32
+  field 20 mFramesPerPacket UInt32
+  field 24 mBytesPerFrame UInt32
+  field 28 mChannelsPerFrame UInt32
+  field 32 mBitsPerChannel UInt32
+  field 36 mReserved UInt32
+  field 40 mSampleRateRange struct AudioValueRange
+  field 40 mMinimum Float64
+  field 48 mMaximum Float64
 
 [record] AudioTimeStamp
   sizeof 64
@@ -280,8 +311,28 @@
 [constant] kAppleLosslessFormatFlag_20BitSourceData = 2
 [constant] kAppleLosslessFormatFlag_24BitSourceData = 3
 [constant] kAppleLosslessFormatFlag_32BitSourceData = 4
+[constant] kAudioAggregateDeviceClassID = 1633773415
+[constant] kAudioAggregateDevicePropertyActiveSubDeviceList = 1634169456
+[constant] kAudioAggregateDevicePropertyClockDevice = 1634755428
+[constant] kAudioAggregateDevicePropertyComposition = 1633906541
+[constant] kAudioAggregateDevicePropertyFullSubDeviceList = 1735554416
+[constant] kAudioAggregateDevicePropertyMasterSubDevice = 1634562932
 [constant] kAudioBalanceFadeType_EqualPower = 1
 [constant] kAudioBalanceFadeType_MaxUnityGain = 0
+[constant] kAudioBooleanControlClassID = 1953458028
+[constant] kAudioBooleanControlPropertyValue = 1650685548
+[constant] kAudioBootChimeVolumeControlClassID = 1886544237
+[constant] kAudioBoxClassID = 1633841016
+[constant] kAudioBoxPropertyAcquired = 1652060014
+[constant] kAudioBoxPropertyAcquisitionFailed = 1652060006
+[constant] kAudioBoxPropertyBoxUID = 1651861860
+[constant] kAudioBoxPropertyClockDeviceList = 1650682915
+[constant] kAudioBoxPropertyDeviceList = 1650751011
+[constant] kAudioBoxPropertyHasAudio = 1651007861
+[constant] kAudioBoxPropertyHasMIDI = 1651010921
+[constant] kAudioBoxPropertyHasVideo = 1651013225
+[constant] kAudioBoxPropertyIsProtected = 1651536495
+[constant] kAudioBoxPropertyTransportType = 1953653102
 [constant] kAudioChannelBit_Center = 4
 [constant] kAudioChannelBit_CenterSurround = 256
 [constant] kAudioChannelBit_LFEScreen = 8
@@ -501,6 +552,24 @@
 [constant] kAudioChannelLayoutTag_UseChannelBitmap = 65536
 [constant] kAudioChannelLayoutTag_UseChannelDescriptions = 0
 [constant] kAudioChannelLayoutTag_XY = 6881282
+[constant] kAudioClipLightControlClassID = 1668049264
+[constant] kAudioClockDeviceClassID = 1633905771
+[constant] kAudioClockDevicePropertyAvailableNominalSampleRates = 1853059619
+[constant] kAudioClockDevicePropertyClockDomain = 1668049764
+[constant] kAudioClockDevicePropertyControlList = 1668575852
+[constant] kAudioClockDevicePropertyDeviceIsAlive = 1818850926
+[constant] kAudioClockDevicePropertyDeviceIsRunning = 1735354734
+[constant] kAudioClockDevicePropertyDeviceUID = 1668639076
+[constant] kAudioClockDevicePropertyLatency = 1819569763
+[constant] kAudioClockDevicePropertyNominalSampleRate = 1853059700
+[constant] kAudioClockDevicePropertyTransportType = 1953653102
+[constant] kAudioClockSourceControlClassID = 1668047723
+[constant] kAudioClockSourceControlPropertyItemKind = 1668049771
+[constant] kAudioClockSourceItemKindInternal = 1768846368
+[constant] kAudioControlClassID = 1633907820
+[constant] kAudioControlPropertyElement = 1667591277
+[constant] kAudioControlPropertyScope = 1668506480
+[constant] kAudioControlPropertyVariant = 1668702578
 [constant] kAudioConverterApplicableEncodeBitRates = 1634034290
 [constant] kAudioConverterApplicableEncodeSampleRates = 1634038642
 [constant] kAudioConverterAvailableEncodeBitRates = 1986355826
@@ -555,6 +624,145 @@
 [constant] kAudioConverterSampleRateConverterComplexity_Normal = 1852797549
 [constant] kAudioConverterSampleRateConverterInitialPhase = 1936876400
 [constant] kAudioConverterSampleRateConverterQuality = 1936876401
+[constant] kAudioDataDestinationControlClassID = 1684370292
+[constant] kAudioDataSourceControlClassID = 1685287523
+[constant] kAudioDeviceClassID = 1633969526
+[constant] kAudioDevicePermissionsError = 560492391
+[constant] kAudioDeviceProcessorOverload = 1870030194
+[constant] kAudioDevicePropertyActualSampleRate = 1634955892
+[constant] kAudioDevicePropertyAvailableNominalSampleRates = 1853059619
+[constant] kAudioDevicePropertyBufferFrameSize = 1718839674
+[constant] kAudioDevicePropertyBufferFrameSizeRange = 1718843939
+[constant] kAudioDevicePropertyBufferSize = 1651730810
+[constant] kAudioDevicePropertyBufferSizeRange = 1651735075
+[constant] kAudioDevicePropertyChannelCategoryName = 1667460717
+[constant] kAudioDevicePropertyChannelCategoryNameCFString = 1818452846
+[constant] kAudioDevicePropertyChannelName = 1667788397
+[constant] kAudioDevicePropertyChannelNameCFString = 1818454126
+[constant] kAudioDevicePropertyChannelNominalLineLevel = 1852601964
+[constant] kAudioDevicePropertyChannelNominalLineLevelNameForID = 1668181110
+[constant] kAudioDevicePropertyChannelNominalLineLevelNameForIDCFString = 1818455660
+[constant] kAudioDevicePropertyChannelNominalLineLevels = 1852601891
+[constant] kAudioDevicePropertyChannelNumberName = 1668181613
+[constant] kAudioDevicePropertyChannelNumberNameCFString = 1818455662
+[constant] kAudioDevicePropertyClipLight = 1668049264
+[constant] kAudioDevicePropertyClockDevice = 1634755428
+[constant] kAudioDevicePropertyClockDomain = 1668049764
+[constant] kAudioDevicePropertyClockSource = 1668510307
+[constant] kAudioDevicePropertyClockSourceKindForID = 1668506475
+[constant] kAudioDevicePropertyClockSourceNameForID = 1668506478
+[constant] kAudioDevicePropertyClockSourceNameForIDCFString = 1818456942
+[constant] kAudioDevicePropertyClockSources = 1668506403
+[constant] kAudioDevicePropertyConfigurationApplication = 1667330160
+[constant] kAudioDevicePropertyDataSource = 1936945763
+[constant] kAudioDevicePropertyDataSourceKindForID = 1936941931
+[constant] kAudioDevicePropertyDataSourceNameForID = 1936941934
+[constant] kAudioDevicePropertyDataSourceNameForIDCFString = 1819501422
+[constant] kAudioDevicePropertyDataSources = 1936941859
+[constant] kAudioDevicePropertyDeviceCanBeDefaultDevice = 1684434036
+[constant] kAudioDevicePropertyDeviceCanBeDefaultSystemDevice = 1936092276
+[constant] kAudioDevicePropertyDeviceHasChanged = 1684629094
+[constant] kAudioDevicePropertyDeviceIsAlive = 1818850926
+[constant] kAudioDevicePropertyDeviceIsRunning = 1735354734
+[constant] kAudioDevicePropertyDeviceIsRunningSomewhere = 1735356005
+[constant] kAudioDevicePropertyDeviceManufacturer = 1835101042
+[constant] kAudioDevicePropertyDeviceManufacturerCFString = 1819107691
+[constant] kAudioDevicePropertyDeviceName = 1851878757
+[constant] kAudioDevicePropertyDeviceNameCFString = 1819173229
+[constant] kAudioDevicePropertyDeviceUID = 1969841184
+[constant] kAudioDevicePropertyDriverShouldOwniSub = 1769174370
+[constant] kAudioDevicePropertyHighPassFilterSetting = 1751740518
+[constant] kAudioDevicePropertyHighPassFilterSettingNameForID = 1667787120
+[constant] kAudioDevicePropertyHighPassFilterSettingNameForIDCFString = 1751740524
+[constant] kAudioDevicePropertyHighPassFilterSettings = 1751740451
+[constant] kAudioDevicePropertyHogMode = 1869180523
+[constant] kAudioDevicePropertyIOCycleUsage = 1852012899
+[constant] kAudioDevicePropertyIOProcStreamUsage = 1937077093
+[constant] kAudioDevicePropertyIOStoppedAbnormally = 1937010788
+[constant] kAudioDevicePropertyIcon = 1768124270
+[constant] kAudioDevicePropertyIsHidden = 1751737454
+[constant] kAudioDevicePropertyJackIsConnected = 1784767339
+[constant] kAudioDevicePropertyLatency = 1819569763
+[constant] kAudioDevicePropertyListenback = 1819504226
+[constant] kAudioDevicePropertyModelUID = 1836411236
+[constant] kAudioDevicePropertyMute = 1836414053
+[constant] kAudioDevicePropertyNominalSampleRate = 1853059700
+[constant] kAudioDevicePropertyPhantomPower = 1885888878
+[constant] kAudioDevicePropertyPhaseInvert = 1885893481
+[constant] kAudioDevicePropertyPlayThru = 1953002101
+[constant] kAudioDevicePropertyPlayThruDestination = 1835295859
+[constant] kAudioDevicePropertyPlayThruDestinationNameForID = 1835295854
+[constant] kAudioDevicePropertyPlayThruDestinationNameForIDCFString = 1835295843
+[constant] kAudioDevicePropertyPlayThruDestinations = 1835295779
+[constant] kAudioDevicePropertyPlayThruSolo = 1953002099
+[constant] kAudioDevicePropertyPlayThruStereoPan = 1836281966
+[constant] kAudioDevicePropertyPlayThruStereoPanChannels = 1836281891
+[constant] kAudioDevicePropertyPlayThruVolumeDecibels = 1836475490
+[constant] kAudioDevicePropertyPlayThruVolumeDecibelsToScalar = 1836462707
+[constant] kAudioDevicePropertyPlayThruVolumeDecibelsToScalarTransferFunction = 1836479590
+[constant] kAudioDevicePropertyPlayThruVolumeRangeDecibels = 1836475427
+[constant] kAudioDevicePropertyPlayThruVolumeScalar = 1836479331
+[constant] kAudioDevicePropertyPlayThruVolumeScalarToDecibels = 1836462692
+[constant] kAudioDevicePropertyPlugIn = 1886156135
+[constant] kAudioDevicePropertyPreferredChannelLayout = 1936879204
+[constant] kAudioDevicePropertyPreferredChannelsForStereo = 1684236338
+[constant] kAudioDevicePropertyRegisterBufferList = 1919055206
+[constant] kAudioDevicePropertyRelatedDevices = 1634429294
+[constant] kAudioDevicePropertySafetyOffset = 1935763060
+[constant] kAudioDevicePropertyScopeInput = 1768845428
+[constant] kAudioDevicePropertyScopeOutput = 1869968496
+[constant] kAudioDevicePropertyScopePlayThrough = 1886679669
+[constant] kAudioDevicePropertySolo = 1936682095
+[constant] kAudioDevicePropertyStereoPan = 1936744814
+[constant] kAudioDevicePropertyStereoPanChannels = 1936748067
+[constant] kAudioDevicePropertyStreamConfiguration = 1936482681
+[constant] kAudioDevicePropertyStreamFormat = 1936092532
+[constant] kAudioDevicePropertyStreamFormatMatch = 1936092525
+[constant] kAudioDevicePropertyStreamFormatSupported = 1936092479
+[constant] kAudioDevicePropertyStreamFormats = 1936092451
+[constant] kAudioDevicePropertyStreams = 1937009955
+[constant] kAudioDevicePropertySubMute = 1936553332
+[constant] kAudioDevicePropertySubVolumeDecibels = 1937140836
+[constant] kAudioDevicePropertySubVolumeDecibelsToScalar = 1935946358
+[constant] kAudioDevicePropertySubVolumeDecibelsToScalarTransferFunction = 1937142886
+[constant] kAudioDevicePropertySubVolumeRangeDecibels = 1937138723
+[constant] kAudioDevicePropertySubVolumeScalar = 1937140845
+[constant] kAudioDevicePropertySubVolumeScalarToDecibels = 1937125988
+[constant] kAudioDevicePropertySupportsMixing = 1835628607
+[constant] kAudioDevicePropertyTalkback = 1952541794
+[constant] kAudioDevicePropertyTransportType = 1953653102
+[constant] kAudioDevicePropertyUsesVariableBufferFrameSizes = 1986425722
+[constant] kAudioDevicePropertyVolumeDecibels = 1987013732
+[constant] kAudioDevicePropertyVolumeDecibelsToScalar = 1684157046
+[constant] kAudioDevicePropertyVolumeDecibelsToScalarTransferFunction = 1986229350
+[constant] kAudioDevicePropertyVolumeRangeDecibels = 1986290211
+[constant] kAudioDevicePropertyVolumeScalar = 1987013741
+[constant] kAudioDevicePropertyVolumeScalarToDecibels = 1983013986
+[constant] kAudioDeviceStartTimeDontConsultDeviceFlag = 2
+[constant] kAudioDeviceStartTimeDontConsultHALFlag = 4
+[constant] kAudioDeviceStartTimeIsInputFlag = 1
+[constant] kAudioDeviceTransportTypeAVB = 1700886114
+[constant] kAudioDeviceTransportTypeAggregate = 1735554416
+[constant] kAudioDeviceTransportTypeAirPlay = 1634300528
+[constant] kAudioDeviceTransportTypeAutoAggregate = 1718055536
+[constant] kAudioDeviceTransportTypeBluetooth = 1651275109
+[constant] kAudioDeviceTransportTypeBluetoothLE = 1651271009
+[constant] kAudioDeviceTransportTypeBuiltIn = 1651274862
+[constant] kAudioDeviceTransportTypeDisplayPort = 1685090932
+[constant] kAudioDeviceTransportTypeFireWire = 825440564
+[constant] kAudioDeviceTransportTypeHDMI = 1751412073
+[constant] kAudioDeviceTransportTypePCI = 1885563168
+[constant] kAudioDeviceTransportTypeThunderbolt = 1953002862
+[constant] kAudioDeviceTransportTypeUSB = 1970496032
+[constant] kAudioDeviceTransportTypeUnknown = 0
+[constant] kAudioDeviceTransportTypeVirtual = 1986622068
+[constant] kAudioDeviceUnknown = 0
+[constant] kAudioDeviceUnsupportedFormatError = 560226676
+[constant] kAudioEndPointClassID = 1701733488
+[constant] kAudioEndPointDeviceClassID = 1701078390
+[constant] kAudioEndPointDevicePropertyComposition = 1633906541
+[constant] kAudioEndPointDevicePropertyEndPointList = 1634169456
+[constant] kAudioEndPointDevicePropertyIsPrivate = 1886546294
 [constant] kAudioFile3GP2Type = 862416946
 [constant] kAudioFile3GPType = 862417008
 [constant] kAudioFileAAC_ADTSType = 1633973363
@@ -776,6 +984,178 @@
 [constant] kAudioFormatUnsupportedDataFormatError = 1718449215
 [constant] kAudioFormatUnsupportedPropertyError = 1886547824
 [constant] kAudioFormatiLBC = 1768710755
+[constant] kAudioHardwareBadDeviceError = 560227702
+[constant] kAudioHardwareBadObjectError = 560947818
+[constant] kAudioHardwareBadPropertySizeError = 561211770
+[constant] kAudioHardwareBadStreamError = 561214578
+[constant] kAudioHardwareIllegalOperationError = 1852797029
+[constant] kAudioHardwareNoError = 0
+[constant] kAudioHardwareNotRunningError = 1937010544
+[constant] kAudioHardwarePowerHintFavorSavingPower = 1
+[constant] kAudioHardwarePowerHintNone = 0
+[constant] kAudioHardwarePropertyBootChimeVolumeDecibels = 1650620004
+[constant] kAudioHardwarePropertyBootChimeVolumeDecibelsToScalar = 1650733686
+[constant] kAudioHardwarePropertyBootChimeVolumeDecibelsToScalarTransferFunction = 1651930214
+[constant] kAudioHardwarePropertyBootChimeVolumeRangeDecibels = 1650615331
+[constant] kAudioHardwarePropertyBootChimeVolumeScalar = 1650620019
+[constant] kAudioHardwarePropertyBootChimeVolumeScalarToDecibels = 1651913316
+[constant] kAudioHardwarePropertyBoxList = 1651472419
+[constant] kAudioHardwarePropertyClockDeviceList = 1668049699
+[constant] kAudioHardwarePropertyDefaultInputDevice = 1682533920
+[constant] kAudioHardwarePropertyDefaultOutputDevice = 1682929012
+[constant] kAudioHardwarePropertyDefaultSystemOutputDevice = 1934587252
+[constant] kAudioHardwarePropertyDeviceForUID = 1685416292
+[constant] kAudioHardwarePropertyDevices = 1684370979
+[constant] kAudioHardwarePropertyHogModeIsAllowed = 1752131442
+[constant] kAudioHardwarePropertyIsInitingOrExiting = 1768845172
+[constant] kAudioHardwarePropertyMixStereoToMono = 1937010031
+[constant] kAudioHardwarePropertyPlugInForBundleID = 1885954665
+[constant] kAudioHardwarePropertyPlugInList = 1886152483
+[constant] kAudioHardwarePropertyPowerHint = 1886353256
+[constant] kAudioHardwarePropertyProcessIsAudible = 1886221684
+[constant] kAudioHardwarePropertyProcessIsMaster = 1835103092
+[constant] kAudioHardwarePropertyRunLoop = 1919839344
+[constant] kAudioHardwarePropertyServiceRestarted = 1936880500
+[constant] kAudioHardwarePropertySleepingIsAllowed = 1936483696
+[constant] kAudioHardwarePropertyTranslateBundleIDToPlugIn = 1651074160
+[constant] kAudioHardwarePropertyTranslateBundleIDToTransportManager = 1953325673
+[constant] kAudioHardwarePropertyTranslateUIDToBox = 1969841250
+[constant] kAudioHardwarePropertyTranslateUIDToClockDevice = 1969841251
+[constant] kAudioHardwarePropertyTranslateUIDToDevice = 1969841252
+[constant] kAudioHardwarePropertyTransportManagerList = 1953326883
+[constant] kAudioHardwarePropertyUnloadingIsAllowed = 1970170980
+[constant] kAudioHardwarePropertyUserIDChanged = 1702193508
+[constant] kAudioHardwarePropertyUserSessionIsActiveOrHeadless = 1970496882
+[constant] kAudioHardwareUnknownPropertyError = 2003332927
+[constant] kAudioHardwareUnspecifiedError = 2003329396
+[constant] kAudioHardwareUnsupportedOperationError = 1970171760
+[constant] kAudioHighPassFilterControlClassID = 1751740518
+[constant] kAudioISubOwnerControlClassID = 1635017576
+[constant] kAudioJackControlClassID = 1784767339
+[constant] kAudioLFEMuteControlClassID = 1937072749
+[constant] kAudioLFEVolumeControlClassID = 1937072758
+[constant] kAudioLevelControlClassID = 1818588780
+[constant] kAudioLevelControlPropertyConvertDecibelsToScalar = 1818453107
+[constant] kAudioLevelControlPropertyConvertScalarToDecibels = 1818456932
+[constant] kAudioLevelControlPropertyDecibelRange = 1818453106
+[constant] kAudioLevelControlPropertyDecibelValue = 1818453110
+[constant] kAudioLevelControlPropertyDecibelsToScalarTransferFunction = 1818457190
+[constant] kAudioLevelControlPropertyScalarValue = 1818456950
+[constant] kAudioLevelControlTranferFunction10Over1 = 13
+[constant] kAudioLevelControlTranferFunction11Over1 = 14
+[constant] kAudioLevelControlTranferFunction12Over1 = 15
+[constant] kAudioLevelControlTranferFunction1Over2 = 2
+[constant] kAudioLevelControlTranferFunction1Over3 = 1
+[constant] kAudioLevelControlTranferFunction2Over1 = 5
+[constant] kAudioLevelControlTranferFunction3Over1 = 6
+[constant] kAudioLevelControlTranferFunction3Over2 = 4
+[constant] kAudioLevelControlTranferFunction3Over4 = 3
+[constant] kAudioLevelControlTranferFunction4Over1 = 7
+[constant] kAudioLevelControlTranferFunction5Over1 = 8
+[constant] kAudioLevelControlTranferFunction6Over1 = 9
+[constant] kAudioLevelControlTranferFunction7Over1 = 10
+[constant] kAudioLevelControlTranferFunction8Over1 = 11
+[constant] kAudioLevelControlTranferFunction9Over1 = 12
+[constant] kAudioLevelControlTranferFunctionLinear = 0
+[constant] kAudioLineLevelControlClassID = 1852601964
+[constant] kAudioListenbackControlClassID = 1819504226
+[constant] kAudioMuteControlClassID = 1836414053
+[constant] kAudioObjectClassID = 1634689642
+[constant] kAudioObjectClassIDWildcard = 707406378
+[constant] kAudioObjectPropertyBaseClass = 1650682995
+[constant] kAudioObjectPropertyClass = 1668047219
+[constant] kAudioObjectPropertyControlList = 1668575852
+[constant] kAudioObjectPropertyCreator = 1869638759
+[constant] kAudioObjectPropertyElementCategoryName = 1818452846
+[constant] kAudioObjectPropertyElementMaster = 0
+[constant] kAudioObjectPropertyElementName = 1818454126
+[constant] kAudioObjectPropertyElementNumberName = 1818455662
+[constant] kAudioObjectPropertyElementWildcard = 4294967295
+[constant] kAudioObjectPropertyFirmwareVersion = 1719105134
+[constant] kAudioObjectPropertyIdentify = 1768187246
+[constant] kAudioObjectPropertyListenerAdded = 1818850145
+[constant] kAudioObjectPropertyListenerRemoved = 1818850162
+[constant] kAudioObjectPropertyManufacturer = 1819107691
+[constant] kAudioObjectPropertyModelName = 1819111268
+[constant] kAudioObjectPropertyName = 1819173229
+[constant] kAudioObjectPropertyOwnedObjects = 1870098020
+[constant] kAudioObjectPropertyOwner = 1937007734
+[constant] kAudioObjectPropertyScopeGlobal = 1735159650
+[constant] kAudioObjectPropertyScopeInput = 1768845428
+[constant] kAudioObjectPropertyScopeOutput = 1869968496
+[constant] kAudioObjectPropertyScopePlayThrough = 1886679669
+[constant] kAudioObjectPropertyScopeWildcard = 707406378
+[constant] kAudioObjectPropertySelectorWildcard = 707406378
+[constant] kAudioObjectPropertySerialNumber = 1936618861
+[constant] kAudioObjectSystemObject = 1
+[constant] kAudioObjectUnknown = 0
+[constant] kAudioPhantomPowerControlClassID = 1885888878
+[constant] kAudioPhaseInvertControlClassID = 1885893481
+[constant] kAudioPlugInClassID = 1634757735
+[constant] kAudioPlugInCreateAggregateDevice = 1667327847
+[constant] kAudioPlugInDestroyAggregateDevice = 1684105063
+[constant] kAudioPlugInPropertyBoxList = 1651472419
+[constant] kAudioPlugInPropertyBundleID = 1885956452
+[constant] kAudioPlugInPropertyClockDeviceList = 1668049699
+[constant] kAudioPlugInPropertyDeviceList = 1684370979
+[constant] kAudioPlugInPropertyTranslateUIDToBox = 1969841250
+[constant] kAudioPlugInPropertyTranslateUIDToClockDevice = 1969841251
+[constant] kAudioPlugInPropertyTranslateUIDToDevice = 1969841252
+[constant] kAudioPropertyWildcardChannel = 4294967295
+[constant] kAudioPropertyWildcardPropertyID = 707406378
+[constant] kAudioPropertyWildcardSection = 255
+[constant] kAudioSelectorControlClassID = 1936483188
+[constant] kAudioSelectorControlItemKindSpacer = 1936745330
+[constant] kAudioSelectorControlPropertyAvailableItems = 1935892841
+[constant] kAudioSelectorControlPropertyCurrentItem = 1935893353
+[constant] kAudioSelectorControlPropertyItemKind = 1668049771
+[constant] kAudioSelectorControlPropertyItemName = 1935894894
+[constant] kAudioSliderControlClassID = 1936483442
+[constant] kAudioSliderControlPropertyRange = 1935962738
+[constant] kAudioSliderControlPropertyValue = 1935962742
+[constant] kAudioSoloControlClassID = 1936682095
+[constant] kAudioStereoPanControlClassID = 1936744814
+[constant] kAudioStereoPanControlPropertyPanningChannels = 1936745315
+[constant] kAudioStereoPanControlPropertyValue = 1936745334
+[constant] kAudioStreamClassID = 1634956402
+[constant] kAudioStreamPropertyAvailablePhysicalFormats = 1885762657
+[constant] kAudioStreamPropertyAvailableVirtualFormats = 1936092513
+[constant] kAudioStreamPropertyDirection = 1935960434
+[constant] kAudioStreamPropertyIsActive = 1935762292
+[constant] kAudioStreamPropertyLatency = 1819569763
+[constant] kAudioStreamPropertyOwningDevice = 1937007734
+[constant] kAudioStreamPropertyPhysicalFormat = 1885762592
+[constant] kAudioStreamPropertyPhysicalFormatMatch = 1885762669
+[constant] kAudioStreamPropertyPhysicalFormatSupported = 1885762623
+[constant] kAudioStreamPropertyPhysicalFormats = 1885762595
+[constant] kAudioStreamPropertyStartingChannel = 1935894638
+[constant] kAudioStreamPropertyTerminalType = 1952805485
+[constant] kAudioStreamPropertyVirtualFormat = 1936092532
+[constant] kAudioStreamTerminalTypeDigitalAudioInterface = 1936745574
+[constant] kAudioStreamTerminalTypeDisplayPort = 1685090932
+[constant] kAudioStreamTerminalTypeHDMI = 1751412073
+[constant] kAudioStreamTerminalTypeHeadphones = 1751412840
+[constant] kAudioStreamTerminalTypeHeadsetMicrophone = 1752000867
+[constant] kAudioStreamTerminalTypeLFESpeaker = 1818649971
+[constant] kAudioStreamTerminalTypeLine = 1818848869
+[constant] kAudioStreamTerminalTypeMicrophone = 1835623282
+[constant] kAudioStreamTerminalTypeReceiverMicrophone = 1919773027
+[constant] kAudioStreamTerminalTypeReceiverSpeaker = 1920168043
+[constant] kAudioStreamTerminalTypeSpeaker = 1936747378
+[constant] kAudioStreamTerminalTypeTTY = 1953790303
+[constant] kAudioStreamTerminalTypeUnknown = 0
+[constant] kAudioStreamUnknown = 0
+[constant] kAudioSubDeviceClassID = 1634956642
+[constant] kAudioSubDeviceDriftCompensationHighQuality = 96
+[constant] kAudioSubDeviceDriftCompensationLowQuality = 32
+[constant] kAudioSubDeviceDriftCompensationMaxQuality = 127
+[constant] kAudioSubDeviceDriftCompensationMediumQuality = 64
+[constant] kAudioSubDeviceDriftCompensationMinQuality = 0
+[constant] kAudioSubDevicePropertyDriftCompensation = 1685218932
+[constant] kAudioSubDevicePropertyDriftCompensationQuality = 1685218929
+[constant] kAudioSubDevicePropertyExtraLatency = 2020373603
+[constant] kAudioSystemObjectClassID = 1634957683
+[constant] kAudioTalkbackControlClassID = 1952541794
 [constant] kAudioTimeStampHostTimeValid = 2
 [constant] kAudioTimeStampNothingValid = 0
 [constant] kAudioTimeStampRateScalarValid = 4
@@ -783,6 +1163,13 @@
 [constant] kAudioTimeStampSampleHostTimeValid = 3
 [constant] kAudioTimeStampSampleTimeValid = 1
 [constant] kAudioTimeStampWordClockTimeValid = 8
+[constant] kAudioTransportManagerClassID = 1953656941
+[constant] kAudioTransportManagerCreateEndPointDevice = 1667523958
+[constant] kAudioTransportManagerDestroyEndPointDevice = 1684301174
+[constant] kAudioTransportManagerPropertyEndPointList = 1701733411
+[constant] kAudioTransportManagerPropertyTranslateUIDToEndPoint = 1969841253
+[constant] kAudioTransportManagerPropertyTransportType = 1953653102
+[constant] kAudioVolumeControlClassID = 1986817381
 [constant] kAudio_BadFilePathError = 561017960
 [constant] kAudio_FileNotFoundError = -43
 [constant] kAudio_FilePermissionError = -54
@@ -871,11 +1258,18 @@
 [typedef] AudioChannelLayout = struct AudioChannelLayout
 [typedef] AudioChannelLayoutTag = UInt32
 [typedef] AudioClassDescription = struct AudioClassDescription
+[typedef] AudioClassID = UInt32
 [typedef] AudioConverterComplexInputDataProc = OSStatus (*)(AudioConverterRef _Nonnull, UInt32 * _Nonnull, AudioBufferList * _Nonnull, AudioStreamPacketDescription * _Nullable * _Nullable, void * _Nullable)
 [typedef] AudioConverterInputDataProc = OSStatus (*)(AudioConverterRef _Nonnull, UInt32 * _Nonnull, void * _Nonnull * _Nonnull, void * _Nullable)
 [typedef] AudioConverterPrimeInfo = struct AudioConverterPrimeInfo
 [typedef] AudioConverterPropertyID = UInt32
 [typedef] AudioConverterRef = struct OpaqueAudioConverter *
+[typedef] AudioDeviceID = AudioObjectID
+[typedef] AudioDeviceIOBlock = void (^)(const AudioTimeStamp * _Nonnull, const AudioBufferList * _Nonnull, const AudioTimeStamp * _Nonnull, AudioBufferList * _Nonnull, const AudioTimeStamp * _Nonnull)
+[typedef] AudioDeviceIOProc = OSStatus (*)(AudioObjectID, const AudioTimeStamp * _Nonnull, const AudioBufferList * _Nonnull, const AudioTimeStamp * _Nonnull, AudioBufferList * _Nonnull, const AudioTimeStamp * _Nonnull, void * _Nullable)
+[typedef] AudioDeviceIOProcID = AudioDeviceIOProc
+[typedef] AudioDevicePropertyID = AudioObjectPropertySelector
+[typedef] AudioDevicePropertyListenerProc = OSStatus (*)(AudioDeviceID, UInt32, Boolean, AudioDevicePropertyID, void * _Nullable)
 [typedef] AudioFileFlags = UInt32
 [typedef] AudioFileID = struct OpaqueAudioFileID *
 [typedef] AudioFileMarker = struct AudioFileMarker
@@ -906,11 +1300,26 @@
 [typedef] AudioFormatListItem = struct AudioFormatListItem
 [typedef] AudioFormatPropertyID = UInt32
 [typedef] AudioFramePacketTranslation = struct AudioFramePacketTranslation
+[typedef] AudioHardwareIOProcStreamUsage = struct AudioHardwareIOProcStreamUsage
+[typedef] AudioHardwarePowerHint = UInt32
+[typedef] AudioHardwarePropertyID = AudioObjectPropertySelector
+[typedef] AudioHardwarePropertyListenerProc = OSStatus (*)(AudioHardwarePropertyID, void * _Nullable)
+[typedef] AudioLevelControlTransferFunction = UInt32
+[typedef] AudioObjectID = UInt32
+[typedef] AudioObjectPropertyAddress = struct AudioObjectPropertyAddress
+[typedef] AudioObjectPropertyElement = UInt32
+[typedef] AudioObjectPropertyListenerBlock = void (^)(UInt32, const AudioObjectPropertyAddress * _Nonnull)
+[typedef] AudioObjectPropertyListenerProc = OSStatus (*)(AudioObjectID, UInt32, const AudioObjectPropertyAddress * _Nonnull, void * _Nullable)
+[typedef] AudioObjectPropertyScope = UInt32
+[typedef] AudioObjectPropertySelector = UInt32
 [typedef] AudioPanningInfo = struct AudioPanningInfo
 [typedef] AudioPanningMode = UInt32
 [typedef] AudioSampleType = Float32
 [typedef] AudioStreamBasicDescription = struct AudioStreamBasicDescription
+[typedef] AudioStreamID = AudioObjectID
 [typedef] AudioStreamPacketDescription = struct AudioStreamPacketDescription
+[typedef] AudioStreamPropertyListenerProc = OSStatus (*)(AudioStreamID, UInt32, AudioDevicePropertyID, void * _Nullable)
+[typedef] AudioStreamRangedDescription = struct AudioStreamRangedDescription
 [typedef] AudioTimeStamp = struct AudioTimeStamp
 [typedef] AudioTimeStampFlags = UInt32
 [typedef] AudioUnitSampleType = Float32
@@ -937,6 +1346,23 @@
 [function] AudioConverterNewSpecific = OSStatus (const AudioStreamBasicDescription * _Nonnull, const AudioStreamBasicDescription * _Nonnull, UInt32, const AudioClassDescription * _Nonnull, AudioConverterRef  _Nullable * _Nonnull)
 [function] AudioConverterReset = OSStatus (AudioConverterRef _Nonnull)
 [function] AudioConverterSetProperty = OSStatus (AudioConverterRef _Nonnull, AudioConverterPropertyID, UInt32, const void * _Nonnull)
+[function] AudioDeviceAddIOProc = OSStatus (AudioDeviceID, AudioDeviceIOProc _Nonnull, void * _Nullable)
+[function] AudioDeviceAddPropertyListener = OSStatus (AudioDeviceID, UInt32, Boolean, AudioDevicePropertyID, AudioDevicePropertyListenerProc _Nonnull, void * _Nullable)
+[function] AudioDeviceCreateIOProcID = OSStatus (AudioObjectID, AudioDeviceIOProc _Nonnull, void * _Nullable, AudioDeviceIOProcID  _Nullable * _Nonnull)
+[function] AudioDeviceCreateIOProcIDWithBlock = OSStatus (AudioDeviceIOProcID  _Nullable * _Nonnull, AudioObjectID, dispatch_queue_t _Nullable, AudioDeviceIOBlock _Nonnull)
+[function] AudioDeviceDestroyIOProcID = OSStatus (AudioObjectID, AudioDeviceIOProcID _Nonnull)
+[function] AudioDeviceGetCurrentTime = OSStatus (AudioObjectID, AudioTimeStamp * _Nonnull)
+[function] AudioDeviceGetNearestStartTime = OSStatus (AudioObjectID, AudioTimeStamp * _Nonnull, UInt32)
+[function] AudioDeviceGetProperty = OSStatus (AudioDeviceID, UInt32, Boolean, AudioDevicePropertyID, UInt32 * _Nonnull, void * _Nonnull)
+[function] AudioDeviceGetPropertyInfo = OSStatus (AudioDeviceID, UInt32, Boolean, AudioDevicePropertyID, UInt32 * _Nullable, Boolean * _Nullable)
+[function] AudioDeviceRead = OSStatus (AudioDeviceID, const AudioTimeStamp * _Nonnull, AudioBufferList * _Nonnull)
+[function] AudioDeviceRemoveIOProc = OSStatus (AudioDeviceID, AudioDeviceIOProc _Nonnull)
+[function] AudioDeviceRemovePropertyListener = OSStatus (AudioDeviceID, UInt32, Boolean, AudioDevicePropertyID, AudioDevicePropertyListenerProc _Nonnull)
+[function] AudioDeviceSetProperty = OSStatus (AudioDeviceID, const AudioTimeStamp * _Nullable, UInt32, Boolean, AudioDevicePropertyID, UInt32, const void * _Nonnull)
+[function] AudioDeviceStart = OSStatus (AudioObjectID, AudioDeviceIOProcID _Nullable)
+[function] AudioDeviceStartAtTime = OSStatus (AudioObjectID, AudioDeviceIOProcID _Nullable, AudioTimeStamp * _Nonnull, UInt32)
+[function] AudioDeviceStop = OSStatus (AudioObjectID, AudioDeviceIOProcID _Nullable)
+[function] AudioDeviceTranslateTime = OSStatus (AudioObjectID, const AudioTimeStamp * _Nonnull, AudioTimeStamp * _Nonnull)
 [function] AudioFileClose = OSStatus (AudioFileID _Nonnull)
 [function] AudioFileCountUserData = OSStatus (AudioFileID _Nonnull, UInt32, UInt32 * _Nonnull)
 [function] AudioFileCreate = OSStatus (const struct FSRef * _Nonnull, CFStringRef _Nonnull, AudioFileTypeID, const AudioStreamBasicDescription * _Nonnull, AudioFileFlags, struct FSRef * _Nonnull, AudioFileID  _Nullable * _Nonnull)
@@ -973,6 +1399,31 @@
 [function] AudioGetCurrentHostTime = UInt64 ()
 [function] AudioGetHostClockFrequency = Float64 ()
 [function] AudioGetHostClockMinimumTimeDelta = UInt32 ()
+[function] AudioHardwareAddPropertyListener = OSStatus (AudioHardwarePropertyID, AudioHardwarePropertyListenerProc _Nonnull, void * _Nullable)
+[function] AudioHardwareAddRunLoopSource = OSStatus (CFRunLoopSourceRef _Nonnull)
+[function] AudioHardwareCreateAggregateDevice = OSStatus (CFDictionaryRef _Nonnull, AudioObjectID * _Nonnull)
+[function] AudioHardwareDestroyAggregateDevice = OSStatus (AudioObjectID)
+[function] AudioHardwareGetProperty = OSStatus (AudioHardwarePropertyID, UInt32 * _Nonnull, void * _Nonnull)
+[function] AudioHardwareGetPropertyInfo = OSStatus (AudioHardwarePropertyID, UInt32 * _Nullable, Boolean * _Nullable)
+[function] AudioHardwareRemovePropertyListener = OSStatus (AudioHardwarePropertyID, AudioHardwarePropertyListenerProc _Nonnull)
+[function] AudioHardwareRemoveRunLoopSource = OSStatus (CFRunLoopSourceRef _Nonnull)
+[function] AudioHardwareSetProperty = OSStatus (AudioHardwarePropertyID, UInt32, const void * _Nonnull)
+[function] AudioHardwareUnload = OSStatus ()
+[function] AudioObjectAddPropertyListener = OSStatus (AudioObjectID, const AudioObjectPropertyAddress * _Nonnull, AudioObjectPropertyListenerProc _Nonnull, void * _Nullable)
+[function] AudioObjectAddPropertyListenerBlock = OSStatus (AudioObjectID, const AudioObjectPropertyAddress * _Nonnull, dispatch_queue_t _Nullable, AudioObjectPropertyListenerBlock _Nonnull)
+[function] AudioObjectGetPropertyData = OSStatus (AudioObjectID, const AudioObjectPropertyAddress * _Nonnull, UInt32, const void * _Nullable, UInt32 * _Nonnull, void * _Nonnull)
+[function] AudioObjectGetPropertyDataSize = OSStatus (AudioObjectID, const AudioObjectPropertyAddress * _Nonnull, UInt32, const void * _Nullable, UInt32 * _Nonnull)
+[function] AudioObjectHasProperty = Boolean (AudioObjectID, const AudioObjectPropertyAddress * _Nonnull)
+[function] AudioObjectIsPropertySettable = OSStatus (AudioObjectID, const AudioObjectPropertyAddress * _Nonnull, Boolean * _Nonnull)
+[function] AudioObjectRemovePropertyListener = OSStatus (AudioObjectID, const AudioObjectPropertyAddress * _Nonnull, AudioObjectPropertyListenerProc _Nonnull, void * _Nullable)
+[function] AudioObjectRemovePropertyListenerBlock = OSStatus (AudioObjectID, const AudioObjectPropertyAddress * _Nonnull, dispatch_queue_t _Nullable, AudioObjectPropertyListenerBlock _Nonnull)
+[function] AudioObjectSetPropertyData = OSStatus (AudioObjectID, const AudioObjectPropertyAddress * _Nonnull, UInt32, const void * _Nullable, UInt32, const void * _Nonnull)
+[function] AudioObjectShow = void (AudioObjectID)
+[function] AudioStreamAddPropertyListener = OSStatus (AudioStreamID, UInt32, AudioDevicePropertyID, AudioStreamPropertyListenerProc _Nonnull, void * _Nullable)
+[function] AudioStreamGetProperty = OSStatus (AudioStreamID, UInt32, AudioDevicePropertyID, UInt32 * _Nonnull, void * _Nonnull)
+[function] AudioStreamGetPropertyInfo = OSStatus (AudioStreamID, UInt32, AudioDevicePropertyID, UInt32 * _Nullable, Boolean * _Nullable)
+[function] AudioStreamRemovePropertyListener = OSStatus (AudioStreamID, UInt32, AudioDevicePropertyID, AudioStreamPropertyListenerProc _Nonnull)
+[function] AudioStreamSetProperty = OSStatus (AudioStreamID, const AudioTimeStamp * _Nullable, UInt32, AudioDevicePropertyID, UInt32, const void * _Nonnull)
 [function] ExtAudioFileCreateNew = OSStatus (const struct FSRef * _Nonnull, CFStringRef _Nonnull, AudioFileTypeID, const AudioStreamBasicDescription * _Nonnull, const AudioChannelLayout * _Nullable, ExtAudioFileRef  _Nullable * _Nonnull)
 [function] ExtAudioFileCreateWithURL = OSStatus (CFURLRef _Nonnull, AudioFileTypeID, const AudioStreamBasicDescription * _Nonnull, const AudioChannelLayout * _Nullable, UInt32, ExtAudioFileRef  _Nullable * _Nonnull)
 [function] ExtAudioFileDispose = OSStatus (ExtAudioFileRef _Nonnull)

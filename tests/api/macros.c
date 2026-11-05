@@ -16,6 +16,7 @@
  * bug that no amount of type checking catches.
  */
 
+#include <CoreAudio/AudioHardware.h>
 #include <AudioToolbox/AudioToolbox.h>
 #include <AudioToolbox/ExtendedAudioFile.h>
 
@@ -180,6 +181,27 @@ int main(void)
 	fn_check("kAudioFileStreamError_IllegalOperation", kAudioFileStreamError_IllegalOperation, 1852797029);
 	fn_check("kAudioFileStreamError_InvalidFile", kAudioFileStreamError_InvalidFile, 1685348671);
 	fn_check("kAudioFileStreamParseFlag_Discontinuity", kAudioFileStreamParseFlag_Discontinuity, 1);
+
+	/* --- the HAL: object ids, scopes, selectors, errors. ------------------- */
+	fn_check("kAudioObjectSystemObject", kAudioObjectSystemObject, 1);
+	fn_check("kAudioObjectUnknown", kAudioObjectUnknown, 0);
+	fn_check("kAudioObjectPropertyScopeGlobal", kAudioObjectPropertyScopeGlobal, 1735159650);
+	fn_check("kAudioObjectPropertyScopeInput", kAudioObjectPropertyScopeInput, 1768845428);
+	fn_check("kAudioObjectPropertyScopeOutput", kAudioObjectPropertyScopeOutput, 1869968496);
+	fn_check("kAudioObjectPropertyElementMaster", kAudioObjectPropertyElementMaster, 0);
+	fn_check("kAudioHardwarePropertyDevices", kAudioHardwarePropertyDevices, 1684370979);
+	fn_check("kAudioHardwarePropertyDefaultOutputDevice",
+	         kAudioHardwarePropertyDefaultOutputDevice, 1682929012);
+	fn_check("kAudioDevicePropertyDeviceNameCFString", kAudioDevicePropertyDeviceNameCFString, 1819173229);
+	fn_check("kAudioDevicePropertyVolumeScalar", kAudioDevicePropertyVolumeScalar, 1987013741);
+	fn_check("kAudioDevicePropertyBufferFrameSize", kAudioDevicePropertyBufferFrameSize, 1718839674);
+	fn_check("kAudioStreamPropertyVirtualFormat", kAudioStreamPropertyVirtualFormat, 1936092532);
+	fn_check("kAudioStreamPropertyDirection", kAudioStreamPropertyDirection, 1935960434);
+	fn_check("kAudioHardwareUnknownPropertyError", kAudioHardwareUnknownPropertyError, 2003332927);
+	fn_check("kAudioHardwareBadObjectError", kAudioHardwareBadObjectError, 560947818);
+	fn_check("kAudioHardwareUnsupportedOperationError",
+	         kAudioHardwareUnsupportedOperationError, 1970171760);
+	fn_check("kAudioDeviceTransportTypeVirtual", kAudioDeviceTransportTypeVirtual, 1986622068);
 
 	if (g_failures != 0) {
 		fprintf(stderr, "api-macros: %d failure(s)\n", g_failures);

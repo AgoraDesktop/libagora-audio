@@ -39,6 +39,7 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
 endif()
 
 find_package(CoreFoundation CONFIG REQUIRED)
+find_package(dispatch CONFIG REQUIRED)
 find_package(Threads REQUIRED)
 
 # ---------------------------------------------------------------------------
@@ -58,9 +59,15 @@ add_library(Audio SHARED
     "${CMAKE_CURRENT_SOURCE_DIR}/AudioConverter.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/AudioFile.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/AudioFileStream.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/AudioHardware.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/AudioHardware-null.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/AudioHardwareDeprecated.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/ExtAudioFile.c")
 
 set_target_properties(Audio PROPERTIES OUTPUT_NAME agora-audio)
+
+# The HAL's listener and io-proc doors are block-based, as Apple's are, so the declarations need -fblocks.
+target_compile_options(Audio PRIVATE -fblocks)
 
 target_include_directories(Audio
     PRIVATE
@@ -76,6 +83,7 @@ target_link_libraries(Audio
         CoreFoundation::CoreFoundation
     PRIVATE
         Threads::Threads
+        dispatch
         m)
 
 # **THE TESTS ARE A DEVELOPMENT ARTEFACT, AND A RELEASE DOES NOT BUILD THEM.** `-DBUILD_TESTING=OFF`,

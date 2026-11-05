@@ -41,6 +41,12 @@ add_executable(file file.c)
 target_link_libraries(file PRIVATE Audio m)
 add_test(NAME file COMMAND file)
 
+add_executable(hal hal.c)
+target_link_libraries(hal PRIVATE Audio m dispatch)
+# The suite asserts on the mixer's own output, which is a test hook in the library's private header.
+target_include_directories(hal PRIVATE "${CMAKE_SOURCE_DIR}")
+add_test(NAME hal COMMAND hal)
+
 add_executable(hosttime hosttime.c)
 target_link_libraries(hosttime PRIVATE Audio)
 add_test(NAME hosttime COMMAND hosttime)
@@ -53,5 +59,5 @@ set(_agora_runtime_dirs
     "$<TARGET_FILE_DIR:CoreFoundation::CoreFoundation>")
 list(REMOVE_DUPLICATES _agora_runtime_dirs)
 string(REPLACE ";" ":" _agora_ld_path "${_agora_runtime_dirs}")
-set_tests_properties(api-layout api-macros api-cxx api-prototypes format converter file hosttime PROPERTIES
+set_tests_properties(api-layout api-macros api-cxx api-prototypes format converter file hal hosttime PROPERTIES
     ENVIRONMENT "LD_LIBRARY_PATH=${_agora_ld_path}")

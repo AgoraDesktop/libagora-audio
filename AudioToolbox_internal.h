@@ -94,4 +94,51 @@ UInt32 fn_resampler_pull(agora_resampler *rs, float *out, UInt32 count);
 /* Drop history that no longer contributes to any future output frame. */
 void fn_resampler_compact(agora_resampler *rs);
 
+/* ------------------------------------------------------------------------------------------------
+ * The HAL's driver seam, and the two hooks the suites use.
+ *
+ * A DRIVER DESCRIBES DEVICES AND RUNS A DATA THREAD; IT DOES NOT ANSWER PROPERTIES. Everything above —
+ * the object table, the property switch, the listeners, the mixer — is portable, which is what makes the
+ * same suite able to measure the null backend today and a PipeWire backend later without changing a test.
+ * ---------------------------------------------------------------------------------------------- */
+
+#include <CoreAudio/AudioHardware.h>
+
+typedef struct agora_device_desc {
+	AudioDeviceID id;
+	const char *  name;
+	const char *  uid;
+	const char *  manufacturer;
+	UInt32        transport;
+	Float64       nominal_rate;
+	UInt32        buffer_frames;
+	UInt32        channels;
+	bool          has_input;
+	bool          has_output;
+	UInt32        terminal_type;
+} agora_device_desc;
+
+typedef struct agora_driver {
+	const char * name;
+	UInt32       (*device_count)(void);
+	bool         (*device_describe)(UInt32 index, agora_device_desc *out);
+	bool         (*start)(AudioDeviceID id);
+	void         (*stop)(AudioDeviceID id);
+} agora_driver;
+
+/* The backends. Only the null one exists in this phase. */
+const agora_driver * fn_agora_driver_null(void);
+
+/* The backend to use: `AGORA_AUDIO_DRIVER` if set, else the first that can fail honestly. A suite calls the
+ * `fn_` form so a developer's shell cannot change what a test measured. */
+void fn_agora_audio_set_driver(const char *name);
+
+/* Called by a driver's data thread. Fills `mix` (interleaved float32, `frames` long) from every attached io
+ * proc, applies the device's volume, and returns nothing — the driver plays it or drops it. */
+void fn_agora_device_render(AudioDeviceID id, float *mix, UInt32 frames);
+
+/* Test hooks, not part of the API and never installed: what the mixer produced, and how many frames it has
+ * rendered, so a suite can assert that two io procs summed rather than that they were both called. */
+void fn_agora_audio_test_peaks(AudioDeviceID id, float *out_peak, UInt64 *out_frames);
+
 #endif /* AGORA_AUDIOTOOLBOX_INTERNAL_H */

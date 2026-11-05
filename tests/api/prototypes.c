@@ -15,7 +15,7 @@
  * means every prototype in the door matched the one Apple shipped.
  */
 
-#include <CoreAudio/CoreAudio.h>
+#include <CoreAudio/AudioHardware.h>
 #include <AudioToolbox/AudioToolbox.h>
 #include <AudioToolbox/ExtendedAudioFile.h>
 
@@ -25,6 +25,72 @@ static Float64 (*p_AudioGetHostClockFrequency)(void) = AudioGetHostClockFrequenc
 static UInt32 (*p_AudioGetHostClockMinimumTimeDelta)(void) = AudioGetHostClockMinimumTimeDelta;
 static UInt64 (*p_AudioConvertHostTimeToNanos)(UInt64) = AudioConvertHostTimeToNanos;
 static UInt64 (*p_AudioConvertNanosToHostTime)(UInt64) = AudioConvertNanosToHostTime;
+
+/* --- CoreAudio/AudioHardware.h --------------------------------------------- */
+static OSStatus (*p_AudioObjectGetPropertyData)(AudioObjectID, const AudioObjectPropertyAddress * _Nonnull,
+                                                UInt32, const void * _Nullable, UInt32 * _Nonnull,
+                                                void * _Nonnull) = AudioObjectGetPropertyData;
+static OSStatus (*p_AudioObjectSetPropertyData)(AudioObjectID, const AudioObjectPropertyAddress * _Nonnull,
+                                                UInt32, const void * _Nullable, UInt32,
+                                                const void * _Nonnull) = AudioObjectSetPropertyData;
+static Boolean (*p_AudioObjectHasProperty)(AudioObjectID, const AudioObjectPropertyAddress * _Nonnull)
+    = AudioObjectHasProperty;
+static OSStatus (*p_AudioObjectIsPropertySettable)(AudioObjectID,
+                                                   const AudioObjectPropertyAddress * _Nonnull,
+                                                   Boolean * _Nonnull) = AudioObjectIsPropertySettable;
+static OSStatus (*p_AudioObjectGetPropertyDataSize)(AudioObjectID,
+                                                    const AudioObjectPropertyAddress * _Nonnull, UInt32,
+                                                    const void * _Nullable, UInt32 * _Nonnull)
+    = AudioObjectGetPropertyDataSize;
+static OSStatus (*p_AudioObjectAddPropertyListener)(AudioObjectID,
+                                                    const AudioObjectPropertyAddress * _Nonnull,
+                                                    AudioObjectPropertyListenerProc _Nonnull,
+                                                    void * _Nullable) = AudioObjectAddPropertyListener;
+static OSStatus (*p_AudioObjectRemovePropertyListener)(AudioObjectID,
+                                                       const AudioObjectPropertyAddress * _Nonnull,
+                                                       AudioObjectPropertyListenerProc _Nonnull,
+                                                       void * _Nullable) = AudioObjectRemovePropertyListener;
+static OSStatus (*p_AudioObjectAddPropertyListenerBlock)(AudioObjectID,
+                                                         const AudioObjectPropertyAddress * _Nonnull,
+                                                         dispatch_queue_t _Nullable,
+                                                         AudioObjectPropertyListenerBlock _Nonnull)
+    = AudioObjectAddPropertyListenerBlock;
+static OSStatus (*p_AudioObjectRemovePropertyListenerBlock)(AudioObjectID,
+                                                            const AudioObjectPropertyAddress * _Nonnull,
+                                                            dispatch_queue_t _Nullable,
+                                                            AudioObjectPropertyListenerBlock _Nonnull)
+    = AudioObjectRemovePropertyListenerBlock;
+static OSStatus (*p_AudioDeviceCreateIOProcID)(AudioObjectID, AudioDeviceIOProc _Nonnull, void * _Nullable,
+                                               AudioDeviceIOProcID _Nullable * _Nonnull)
+    = AudioDeviceCreateIOProcID;
+static OSStatus (*p_AudioDeviceCreateIOProcIDWithBlock)(AudioDeviceIOProcID _Nullable * _Nonnull,
+                                                        AudioObjectID, dispatch_queue_t _Nullable,
+                                                        AudioDeviceIOBlock _Nonnull)
+    = AudioDeviceCreateIOProcIDWithBlock;
+static OSStatus (*p_AudioDeviceDestroyIOProcID)(AudioObjectID, AudioDeviceIOProcID _Nonnull)
+    = AudioDeviceDestroyIOProcID;
+static OSStatus (*p_AudioDeviceStart)(AudioObjectID, AudioDeviceIOProcID _Nullable) = AudioDeviceStart;
+static OSStatus (*p_AudioDeviceStop)(AudioObjectID, AudioDeviceIOProcID _Nullable) = AudioDeviceStop;
+static OSStatus (*p_AudioDeviceGetCurrentTime)(AudioObjectID, AudioTimeStamp * _Nonnull)
+    = AudioDeviceGetCurrentTime;
+static OSStatus (*p_AudioDeviceTranslateTime)(AudioObjectID, const AudioTimeStamp * _Nonnull,
+                                              AudioTimeStamp * _Nonnull) = AudioDeviceTranslateTime;
+static OSStatus (*p_AudioDeviceGetNearestStartTime)(AudioObjectID, AudioTimeStamp * _Nonnull, UInt32)
+    = AudioDeviceGetNearestStartTime;
+static OSStatus (*p_AudioDeviceAddIOProc)(AudioDeviceID, AudioDeviceIOProc _Nonnull, void * _Nullable)
+    = AudioDeviceAddIOProc;
+static OSStatus (*p_AudioDeviceRemoveIOProc)(AudioDeviceID, AudioDeviceIOProc _Nonnull)
+    = AudioDeviceRemoveIOProc;
+static OSStatus (*p_AudioDeviceGetProperty)(AudioDeviceID, UInt32, Boolean, AudioDevicePropertyID,
+                                            UInt32 * _Nonnull, void * _Nonnull) = AudioDeviceGetProperty;
+static OSStatus (*p_AudioDeviceSetProperty)(AudioDeviceID, const AudioTimeStamp * _Nullable, UInt32, Boolean,
+                                            AudioDevicePropertyID, UInt32, const void * _Nonnull)
+    = AudioDeviceSetProperty;
+static OSStatus (*p_AudioDeviceGetPropertyInfo)(AudioDeviceID, UInt32, Boolean, AudioDevicePropertyID,
+                                                UInt32 * _Nullable, Boolean * _Nullable)
+    = AudioDeviceGetPropertyInfo;
+static OSStatus (*p_AudioStreamGetProperty)(AudioStreamID, UInt32, AudioDevicePropertyID,
+                                            UInt32 * _Nonnull, void * _Nonnull) = AudioStreamGetProperty;
 
 /* --- AudioToolbox/AudioFormat.h -------------------------------------------- */
 static OSStatus (*p_AudioFormatGetPropertyInfo)(AudioFormatPropertyID, UInt32, const void * _Nullable,
@@ -163,6 +229,18 @@ int main(void)
 		(void *)p_AudioGetCurrentHostTime, (void *)p_AudioGetHostClockFrequency,
 		(void *)p_AudioGetHostClockMinimumTimeDelta, (void *)p_AudioConvertHostTimeToNanos,
 		(void *)p_AudioConvertNanosToHostTime,
+		(void *)p_AudioObjectGetPropertyData, (void *)p_AudioObjectSetPropertyData,
+		(void *)p_AudioObjectHasProperty, (void *)p_AudioObjectIsPropertySettable,
+		(void *)p_AudioObjectGetPropertyDataSize, (void *)p_AudioObjectAddPropertyListener,
+		(void *)p_AudioObjectRemovePropertyListener, (void *)p_AudioObjectAddPropertyListenerBlock,
+		(void *)p_AudioObjectRemovePropertyListenerBlock, (void *)p_AudioDeviceCreateIOProcID,
+		(void *)p_AudioDeviceCreateIOProcIDWithBlock, (void *)p_AudioDeviceDestroyIOProcID,
+		(void *)p_AudioDeviceStart, (void *)p_AudioDeviceStop,
+		(void *)p_AudioDeviceGetCurrentTime, (void *)p_AudioDeviceTranslateTime,
+		(void *)p_AudioDeviceGetNearestStartTime, (void *)p_AudioDeviceAddIOProc,
+		(void *)p_AudioDeviceRemoveIOProc, (void *)p_AudioDeviceGetProperty,
+		(void *)p_AudioDeviceSetProperty, (void *)p_AudioDeviceGetPropertyInfo,
+		(void *)p_AudioStreamGetProperty,
 		(void *)p_AudioFormatGetPropertyInfo, (void *)p_AudioFormatGetProperty,
 		(void *)p_AudioConverterNew, (void *)p_AudioConverterNewSpecific,
 		(void *)p_AudioConverterDispose, (void *)p_AudioConverterReset,

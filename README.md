@@ -15,14 +15,16 @@ or a prototype drifts. See [Provenance](#provenance) and `PROVENANCE.md`.
 
 ## Status
 
-**Phase 1 — the types, the clock, format queries, conversion, and the three containers. Measured on this
-machine.**
+**Phase 2 — the types, the clock, format queries, conversion, the three containers, and the device layer.**
+Measured on this machine, on the backend that exists everywhere.
 
 ```
 libagora-audio/CoreAudio/
     CoreAudio.h          the umbrella
     CoreAudioTypes.h     the structures, the time stamps, the flag vocabulary, the status codes
     HostTime.h           the host clock
+    AudioHardwareBase.h  the object model: ids, addresses, selectors, listeners
+    AudioHardware.h      the five object functions, the io procs, the deprecated doors
 libagora-audio/AudioToolbox/
     AudioToolbox.h       the umbrella
     AudioFormat.h        the format property door
@@ -37,12 +39,17 @@ AudioConverter.c         the three-step pipeline: float, resample, back out
 AudioFile.c              the three containers, read and written here
 ExtAudioFile.c           format and rate conversion inside the file door
 AudioFileStream.c        incremental parsing, with a listener and a packet callback
+AudioHardware.c          the object table, the property switch, the listeners, the mixer
+AudioHardware-null.c     one device that exists everywhere, with a real data thread
+AudioHardwareDeprecated.c  the pre-10.7 doors, translated into the object API
 tools/refshim/           sixty lines of ours, so clang on Linux can parse Apple's headers
 tools/api-manifest.py    generates tests/api/manifest-10.12.txt from a MacOSX10.12.sdk
 tests/api/               the four identity gates
 ```
 
-**Phase 1 is complete.** Still to come: the device layer (`CoreAudio/AudioHardware.h`), `AudioQueue`, `AudioServices` and `AudioUnit`.
+**Phase 2 is a first slice: the device layer, addressed through one object API, with the `null` backend.**
+Still to come: the ALSA and PipeWire backends behind the same door, then `AudioQueue`, `AudioServices` and
+`AudioUnit`.
 `../AUDIO-PLAN.md` §9 is the schedule and §6 the header-by-header commitment.
 
 The three containers are ours rather than a library's: WAV is a little-endian chunk list, AIFF is a
@@ -73,8 +80,8 @@ seam*, not the API, and they stay out of every public header.
 | `tests/api/layout.c` | a size, an alignment or a field offset — `_Static_assert`, from the manifest's numbers |
 | `tests/api/macros.c` | a constant's value and the flag-decoding macro, checked by value at run time |
 | `tests/api/compile-cxx.cpp` | headers that only compile as C: `extern "C"`, the inline helpers Apple ships |
-| `tests/api/prototypes.c` | a changed parameter, a dropped `const`, a `UInt32 *` that became `UInt32` — 46 prototypes through pointers typed from the manifest |
-| `tests/api/manifest-10.12.txt` | the record itself: 28 records, 580 enumeration constants, 66 typedefs, 63 prototypes |
+| `tests/api/prototypes.c` | a changed parameter, a dropped `const`, a `UInt32 *` that became `UInt32` — 69 prototypes through pointers typed from the manifest |
+| `tests/api/manifest-10.12.txt` | the record itself: 31 records, 936 enumeration constants, 88 typedefs, 105 prototypes |
 
 The manifest is generated, never hand-edited:
 
@@ -109,6 +116,11 @@ manifest already holds every one of them.
 - **`converter`** — int16 → float32 → int16 **bit-exact on every value** (the scale is 2^15 both ways);
   interleaved → non-interleaved keeps its channels; and 44.1 kHz → 48 kHz of a 1 kHz sine measures
   **SNR 85.2 dB**, printed by the suite, with the threshold at the 60 dB a resampler has to clear.
+- **`hal`** — on the `null` backend: the default device and its name (a `CFString`), the rate and the quantum,
+  the output stream and its float32 stereo format, a volume write that reads back, a listener that fires once
+  and then goes quiet when removed, the deprecated door answering the same value, two io procs calling at the
+  device's rate (**12 000 frames in 250 ms, ±20%**), the mixer summing them to **0.375**, mute silencing it,
+  stop stopping it, and a sample time translating to a host time.
 - **`file`** — WAV, AIFF and CAF each written, closed, reopened and compared with `memcmp`: **bit-exact**,
   with the byte count, packet count, duration and data format checked separately; then `ExtAudioFile`
   converting int16 → float32 → int16 exactly, and a 44.1 kHz client writing a 48 kHz file, which lands
