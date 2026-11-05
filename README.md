@@ -58,7 +58,8 @@ AudioHardware-alsa.c     the second backend: `snd_pcm_open` on a name, paced by 
                          and recording from the same name when that PCM can record
 AudioHardware-pipewire.c the third: the session's own server, its sinks, and two streams per started
                          device — playback to a sink, capture from the session's default source
-AudioHardware-sndio.c    the fourth: the BSDs' sound server (written and compiled; not measured here)
+AudioHardware-sndio.c    the fourth: the BSDs' sound server (written and compiled; not measured here),
+                         with a second handle for recording
 AudioHardwareDeprecated.c  the pre-10.7 doors, translated into the object API
 AudioQueue.c             buffers in, played frames out — and the same object filled from the device
 AudioServices.c          a file and a number; the alert is generated, not vendored
@@ -223,11 +224,17 @@ machine's session, the capture stream is given **1024-frame** quanta while the p
 `inInputData` is as long as what actually arrived. Before that, the driver bent one quantum to the other, which either
 dropped audio or claimed samples the device never heard.
 
-Still to come: capture in the last driver (`sio_open(..., SIO_REC, 0)` — the HAL and the queue are ready for it, and it
-answers `kAudioQueueErr_InvalidDevice` until then, honestly and by name), `AUGraph` sub-graphs (their Carbon doors are
-not declared), and `AudioFormat`'s `kAudioFormatProperty_FormatList` (the constant is in the manifest but its
-specifier's shape is not, so the door stays refused rather than guessed). `../AUDIO-PLAN.md` §9 is the schedule and §6
-the header-by-header commitment.
+**sndio records too, with a second handle and the conversion the other way.** `sio_open(name, SIO_REC, 0)` is its own
+handle — sndio has no duplex mode — configured with `rchan` where playback uses `pchan`, read *before* the mixer is
+asked for output so the two directions are one cycle, and scaled from its 32-bit signed samples back to float32,
+because `SIO_PCM` has no float. Capture is optional here as everywhere: a server with no recording device, or one that
+grants another rate or channel count, leaves playback alone. **Like the rest of this backend it is written and compiled
+here but not measured here** (phase 6a above); what a BSD run would measure is listed there, and now includes the
+granted recording parameters in `sio_getpar` and `sio_read`'s blocking back-pressure.
+
+Still to come: `AUGraph` sub-graphs (their Carbon doors are not declared), and `AudioFormat`'s
+`kAudioFormatProperty_FormatList` (the constant is in the manifest but its specifier's shape is not, so the door stays
+refused rather than guessed). `../AUDIO-PLAN.md` §9 is the schedule and §6 the header-by-header commitment.
 
 The three PCM containers are ours rather than a library's: WAV is a little-endian chunk list, AIFF is a
 big-endian one with an 80-bit sample rate, and CAF is a big-endian chunk list with a 64-bit size. MPEG audio is
@@ -339,7 +346,8 @@ skips, exit 77, when there is none):
   `inInputData`. On the null backend the samples are the device's ramp — every consecutive pair one step apart, and
   each cycle's first frame continuing from the last cycle's last, so a dropped or duplicated frame fails the assertion
   either inside a buffer or at the seam between two. ALSA and PipeWire choose their own samples (a plugin's silence, a
-  room), so those legs measure delivery and say so.
+  room), so those legs measure delivery and say so; `sndio` records the same way but its leg skips here — no `sndiod`
+  listens on this machine, and Debian's `sndiod` binary cannot open a device on it either.
 - **`unit`** — the registry finds a built-in and does not invent a fourth; an output unit with a callback
   renders 0.5 and the device measures it; a converter turns int16 0.25 into float32 0.25; a two-bus mixer sums
   0.25 + 0.125 to **0.375**, and halving one bus's volume halves its contribution; and a graph of mixer → output

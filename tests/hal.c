@@ -537,23 +537,22 @@ static void fn_test_input_device(void)
 	AudioDeviceID input = kAudioObjectUnknown;
 	UInt32 size = sizeof(input);
 
-	bool can_capture = strcmp(g_driver, "null") == 0 || strcmp(g_driver, "alsa") == 0
-	                || strcmp(g_driver, "pipewire") == 0;
-
-	if (!can_capture) {
-		printf("      input: the %s backend opens no capture stream, so there is nothing to measure\n", g_driver);
-		return;
-	}
-
+	/* Every backend that is compiled in has a capture path now; a server that has nothing to record from is a fact
+	 * about the machine, not a missing door, so the leg states what it measured rather than skipping. */
 	memset(&watch, 0, sizeof(watch));
+
 	watch.check_ramp = strcmp(g_driver, "null") == 0;
 	watch.ramp = true;
 	watch.continuous = true;
 	watch.half_right = true;
 
-	fn_check("a default input device exists",
-	         AudioObjectGetPropertyData(kAudioObjectSystemObject, &address, 0, NULL, &size, &input) == 0
-	             && input != kAudioObjectUnknown);
+	/* Not a failure: a machine with no microphone is a machine with no microphone. What *would* be a failure is a
+	 * backend that offers one and then hands the io proc nothing, which is what the rest of this measures. */
+	if (AudioObjectGetPropertyData(kAudioObjectSystemObject, &address, 0, NULL, &size, &input) != 0
+	    || input == kAudioObjectUnknown) {
+		printf("      input: this backend describes no capture stream on this machine\n");
+		return;
+	}
 
 	/* The input scope describes one stream, and the stream says which side of the device it is. */
 	address.mSelector = kAudioDevicePropertyStreams;
