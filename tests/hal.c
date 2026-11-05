@@ -27,6 +27,10 @@
 static int g_failures;
 static const char *g_driver = "null";
 static bool g_strict_timing = true;
+/* The null backend and an ALSA `null` PCM are *ours*: this library chooses 48 000 Hz, a 512-frame quantum and
+ * two channels, so the suite can assert those numbers. A session server chooses them for us, and a suite that
+ * insisted on 512 would be measuring PipeWire's configuration rather than this HAL. */
+static bool g_exact_numbers = true;
 
 static void fn_check(const char *what, int ok)
 {
@@ -75,9 +79,11 @@ static void fn_test_objects(void)
 
 	fn_check("a default output device exists", device != kAudioObjectUnknown);
 
+	/* One id per device: the null backend has one and a session server may have several, so the count is a
+	 * multiple of an id's size rather than exactly one id — the first one still has to be the default. */
 	fn_check("the system object reports its devices",
 	         AudioObjectGetPropertyDataSize(kAudioObjectSystemObject, &devices_address, 0, NULL, &size) == 0
-	         && size == sizeof(AudioDeviceID));
+	         && size >= sizeof(AudioDeviceID) && size % sizeof(AudioDeviceID) == 0);
 
 	{
 		AudioDeviceID list[8];
@@ -110,9 +116,10 @@ static void fn_test_objects(void)
 		Float64 rate = 0.0;
 		UInt32 rate_size = sizeof(rate);
 
-		fn_check("the device reports the rate the backend does",
+		fn_check(g_exact_numbers ? "the device reports the rate the backend does"
+		                         : "the device reports a plausible rate",
 		         AudioObjectGetPropertyData(device, &rate_address, 0, NULL, &rate_size, &rate) == 0
-		         && rate == 48000.0);
+		         && (g_exact_numbers ? rate == 48000.0 : (rate >= 8000.0 && rate <= 384000.0)));
 	}
 
 	{
@@ -122,9 +129,9 @@ static void fn_test_objects(void)
 		UInt32 frames = 0;
 		UInt32 frames_size = sizeof(frames);
 
-		fn_check("the quantum is the backend's",
+		fn_check(g_exact_numbers ? "the quantum is the backend's" : "the quantum is a plausible slice",
 		         AudioObjectGetPropertyData(device, &size_address, 0, NULL, &frames_size, &frames) == 0
-		         && frames == 512);
+		         && (g_exact_numbers ? frames == 512 : (frames > 0 && frames <= 8192)));
 	}
 
 	/* The streams, by scope — the question a player asks to find its channel count. */
@@ -148,12 +155,14 @@ static void fn_test_objects(void)
 			UInt32 format_size = sizeof(format);
 
 			memset(&format, 0, sizeof(format));
-			fn_check("the stream's format is float32 stereo",
+			fn_check(g_exact_numbers ? "the stream's format is float32 stereo"
+			                         : "the stream's format is float32 PCM",
 			         AudioObjectGetPropertyData(streams[0], &format_address, 0, NULL, &format_size,
 			                                    &format) == 0
 			         && format.mFormatID == kAudioFormatLinearPCM
 			         && (format.mFormatFlags & kAudioFormatFlagIsFloat) != 0
-			         && format.mChannelsPerFrame == 2
+			         && (g_exact_numbers ? format.mChannelsPerFrame == 2
+			                             : format.mChannelsPerFrame >= 1)
 			         && format.mBitsPerChannel == 32);
 
 			{
@@ -419,9 +428,22 @@ int main(int argc, char *argv[])
 		}
 		g_driver = "alsa";
 		g_strict_timing = false;
+	} else if (argc > 1 && strcmp(argv[1], "pipewire") == 0) {
+		/* A session server paces, mixes and negotiates: the numbers are its answer, not this library's, and
+		 * the pacing assertion is the only one that stays. */
+		g_driver = "pipewire";
+		g_strict_timing = false;
+		g_exact_numbers = false;
 	}
 
 	fn_agora_audio_set_driver(g_driver);
+
+	/* A live server may not be there — a container, a CI leg, a machine with no session — and a backend whose
+	 * absence is a fact about the machine is a skip, not a failure. */
+	if (g_driver[0] != '\0' && strcmp(g_driver, "null") != 0 && fn_default_output() == kAudioObjectUnknown) {
+		fprintf(stderr, "hal: no %s device on this machine; skipped\n", g_driver);
+		return 77;
+	}
 
 	fn_test_objects();
 	fn_test_volume_and_listeners();

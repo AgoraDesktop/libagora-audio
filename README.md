@@ -15,9 +15,11 @@ or a prototype drifts. See [Provenance](#provenance) and `PROVENANCE.md`.
 
 ## Status
 
-**Phase 5 complete — the types, the clock, format queries, conversion, the three containers, the device
-layer, the units and their graph, and AUv3's object surface over them.** Measured on this machine, on the
-backend that exists everywhere.
+**Phase 3 and 5 complete — the types, the clock, format queries, conversion, the three containers, the device
+layer on three backends (`null`, ALSA and PipeWire), the units and their graph, and AUv3's object surface over
+them.** Measured on this machine: the null and ALSA legs of the HAL suite, the PipeWire leg against the
+session server that is actually running here, and 24 576 frames of a 0.5 tone that server pulled in half a
+second.
 
 ```
 libagora-audio/CoreAudio/
@@ -52,6 +54,7 @@ AudioFileStream.c        incremental parsing, with a listener and a packet callb
 AudioHardware.c          the object table, the property switch, the listeners, the mixer
 AudioHardware-null.c     one device that exists everywhere, with a real data thread
 AudioHardware-alsa.c     the second backend: `snd_pcm_open` on a name, paced by its own writes
+AudioHardware-pipewire.c the third: the session's own server, its sinks, and one stream per started device
 AudioHardwareDeprecated.c  the pre-10.7 doors, translated into the object API
 AudioQueue.c             buffers in, played frames out, over the device layer
 AudioServices.c          a file and a number; the alert is generated, not vendored
@@ -84,8 +87,16 @@ Three things about this door are **not** Apple's, and each is stated where it is
   in-process is the only instantiation there is. App-extension hosting (`AUAudioUnitFactory`) is out of
   scope, and the class is not declared — a name that cannot be loaded is worse than an absent one.
 
-Still to come: the PipeWire backend, `sndio`, the `AudioQueue` input side and timelines, `AUGraph`
-sub-graphs, and the rest of `AudioFormat`'s selectors. `../AUDIO-PLAN.md` §9 is the schedule and §6 the
+**Phase 3 — PipeWire.** `AudioHardware-pipewire.c` connects once, freezes what the registry says are sinks
+(`media.class = Audio/Sink`) into a device table after two round trips, and puts the server's default sink first
+so that `kAudioHardwarePropertyDefaultOutputDevice` — the first output device in this HAL — *is* the default.
+Each started device gets one `pw_stream` aimed at its sink by `target.object`; the process callback asks the
+mixer for the frames the server's buffer holds and hands them back. It is deliberately **not** the realtime
+callback (`PW_STREAM_FLAG_RT_PROCESS`): the mixer takes a lock, so a late buffer is the smaller problem. The
+node shows up in `pw-dump` as `Stream/Output/Audio` named `agora-audio-output`, routed to the sink it was given.
+
+Still to come: `sndio` for the BSDs, the `AudioQueue` input side and timelines, `AUGraph` sub-graphs, and the
+rest of `AudioFormat`'s selectors. `../AUDIO-PLAN.md` §9 is the schedule and §6 the
 header-by-header commitment.
 
 The three containers are ours rather than a library's: WAV is a little-endian chunk list, AIFF is a
@@ -106,10 +117,27 @@ unsupported-property error is `'pty?'`, not `'prop'`; and **10.12 has no
 `kAudioFilePropertyFileLengthFrames` at all** — for linear PCM the *packet* count is the frame count, and
 the constant this repository had invented was deleted rather than implemented.
 
-ALSA (and, when it lands, PipeWire) is the *device seam*, not the API: it is a PRIVATE link, so no type from
-it reaches a public header. Foundation is PUBLIC on the Objective-C doors for the same reason Core
-Foundation is — a client naming `AUAudioUnit` needs `NSObject` — and that is why this component sits above
-`libagora-base` in `release/components.conf`.
+ALSA and PipeWire are the *device seam*, not the API: both are PRIVATE links, so no type from either reaches a
+public header. Foundation is PUBLIC on the Objective-C doors for the same reason Core Foundation is — a client
+naming `AUAudioUnit` needs `NSObject` — and that is why this component sits above `libagora-base` in
+`release/components.conf`.
+
+**Which backend a client gets without asking.** `AGORA_AUDIO_DRIVER` names one (`null`, `alsa`, `pipewire`) and
+is the test-and-debug door. With no variable set, the library asks PipeWire whether its server answers — a
+driver that cannot reach its daemon describes no sinks — and uses the null device if not. ALSA is not in that
+chain on purpose: it describes a device whether or not a card exists, so choosing it automatically would turn
+"no sound card" on this machine into "playback errors" on a machine that has neither. On a desktop session
+this means a beep reaches the speakers; in a container it means silence and no error.
+
+```
+$ readelf -d build-prefix/lib/libagora-audio.so | grep -E 'NEEDED|RUNPATH'
+  Shared library: [libagora-base.so]
+  Shared library: [libasound.so.2]
+  Shared library: [libpipewire-0.3.so.0]
+  Shared library: [libagora-core.so]
+  Shared library: [libobjc.so.4]
+  Library runpath: [$ORIGIN]
+```
 
 ## How "identical to 10.12" is kept true
 
@@ -138,7 +166,8 @@ manifest already holds every one of them.
 
 ## The suites
 
-`ctest` runs fourteen, none of which needs a sound card, a session server, or anyone listening:
+`ctest` runs fifteen, none of which needs a sound card, and only one of which needs a session server (and
+skips, exit 77, when there is none):
 
 - **`api-layout`** — every public structure's size, alignment and field offsets against the manifest,
   including the two traps (`AudioBufferList` and `AudioChannelLayout` are variable-length: a client
@@ -164,7 +193,10 @@ manifest already holds every one of them.
   stop stopping it, and a sample time translating to a host time. **The same suite runs a second time on the
   ALSA backend** against its `null` PCM — a real `snd_pcm_open`, a real write loop, no sound card — where
   everything holds except the pacing assertion, which is a fact about the plugin rather than about this
-  library.
+  library. **A third leg runs the same suite on `pipewire`**, against the live session server: it asserts what
+  a server can promise (a sink exists, the default one is first in the device list, the format is float32 PCM,
+  the io procs are called) and skips the numbers the server chooses — rate, quantum, channel count, pacing —
+  with the suite naming which of the two it is measuring.
 - **`unit`** — the registry finds a built-in and does not invent a fourth; an output unit with a callback
   renders 0.5 and the device measures it; a converter turns int16 0.25 into float32 0.25; a two-bus mixer sums
   0.25 + 0.125 to **0.375**, and halving one bus's volume halves its contribution; and a graph of mixer → output
@@ -194,6 +226,7 @@ cmake -S . -B build -DCMAKE_C_COMPILER=/usr/bin/clang-19 \
       -DCMAKE_CXX_COMPILER=/usr/bin/clang++-19 \
       -DCMAKE_OBJC_COMPILER=/usr/bin/clang-19 \
       -DCMAKE_PREFIX_PATH=../build-prefix -DCMAKE_INSTALL_PREFIX=../build-prefix
+# -DAGORA_AUDIO_WITH_PIPEWIRE=OFF and -DAGORA_AUDIO_WITH_ALSA=OFF each drop a backend; both default to AUTO.
 cmake --build build
 cd build && ctest --output-on-failure
 ```

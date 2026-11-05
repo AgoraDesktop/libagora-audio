@@ -126,12 +126,15 @@ typedef struct agora_driver {
 	void         (*stop)(AudioDeviceID id);
 } agora_driver;
 
-/* The backends. Only the null one exists in this phase. */
+/* The backends. The null one is always there; the others are compiled only when their system library is
+ * found, and answer NULL otherwise. */
 const agora_driver * fn_agora_driver_null(void);
 const agora_driver * fn_agora_driver_alsa(void);
+const agora_driver * fn_agora_driver_pipewire(void);
 
-/* The backend to use: `AGORA_AUDIO_DRIVER` if set, else the first that can fail honestly. A suite calls the
- * `fn_` form so a developer's shell cannot change what a test measured. */
+/* The backend to use: `AGORA_AUDIO_DRIVER` if set; `NULL` here or no variable at all means "what this machine
+ * would use by itself", which is PipeWire when its server answers and the null device otherwise. A suite calls
+ * the `fn_` form with a name so a developer's shell cannot change what a test measured. */
 void fn_agora_audio_set_driver(const char *name);
 
 /* Called by a driver's data thread. Fills `mix` (interleaved float32, `frames` long) from every attached io

@@ -107,6 +107,38 @@ static struct {
 
 static void fn_init(void);
 
+/* What a caller gets when it does not choose: the session's own server if one answers, and the null device
+ * otherwise. A property read cannot ask "would a stream work?" without opening one, so the probe is the device
+ * count — a PipeWire driver that cannot reach its daemon describes no sinks, which is exactly the fallback
+ * condition. ALSA is deliberately not in this chain: it describes a device whether or not a card exists, so
+ * choosing it automatically would turn "no sound card" into "playback errors" on machines that have neither. */
+static const agora_driver *fn_driver_named(const char *name)
+{
+	if (name == NULL) {
+		return NULL;
+	}
+	if (strcmp(name, "null") == 0) {
+		return fn_agora_driver_null();
+	}
+	if (strcmp(name, "alsa") == 0) {
+		return fn_agora_driver_alsa();
+	}
+	if (strcmp(name, "pipewire") == 0) {
+		return fn_agora_driver_pipewire();
+	}
+	return NULL;
+}
+
+static const agora_driver *fn_driver_default(void)
+{
+	const agora_driver *pipewire = fn_agora_driver_pipewire();
+
+	if (pipewire != NULL && pipewire->device_count() > 0) {
+		return pipewire;
+	}
+	return fn_agora_driver_null();
+}
+
 /* ------------------------------------------------------------------------------------------------
  * Finding things.
  * ---------------------------------------------------------------------------------------------- */
@@ -174,15 +206,12 @@ static void fn_init(void)
 
 	if (g_hal.driver == NULL) {
 		const char *requested = getenv("AGORA_AUDIO_DRIVER");
+		const agora_driver *named = fn_driver_named(requested);
 
-		if (requested != NULL && strcmp(requested, "alsa") == 0) {
-			g_hal.driver = fn_agora_driver_alsa();
-		}
-		if (g_hal.driver == NULL) {
-			/* The null backend is the one that is always there; a request for a backend this build does not
-			 * have falls back to it rather than failing to make a sound at all. */
-			g_hal.driver = fn_agora_driver_null();
-		}
+		/* A request this build does not have falls back to the null backend rather than failing to make a
+		 * sound at all; no request at all means the server, if there is one. */
+		g_hal.driver = (requested != NULL && named == NULL) ? fn_agora_driver_null()
+		              : (named != NULL ? named : fn_driver_default());
 	}
 
 	count = g_hal.driver->device_count();
@@ -271,9 +300,8 @@ void fn_agora_audio_set_driver(const char *name)
 	memset(g_hal.devices, 0, sizeof(g_hal.devices));
 	memset(g_hal.listeners, 0, sizeof(g_hal.listeners));
 
-	if (name != NULL && strcmp(name, "alsa") == 0) {
-		g_hal.driver = fn_agora_driver_alsa();
-	}
+	/* A suite names its backend; naming none asks for whatever this machine would use by itself. */
+	g_hal.driver = (name != NULL) ? fn_driver_named(name) : fn_driver_default();
 	if (g_hal.driver == NULL) {
 		g_hal.driver = fn_agora_driver_null();
 	}

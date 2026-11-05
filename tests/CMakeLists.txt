@@ -59,6 +59,12 @@ add_test(NAME hal COMMAND hal)
 if(ALSA_FOUND)
     add_test(NAME hal-alsa COMMAND hal alsa)
 endif()
+# The same suite against the session server, when one is running; 77 means "this machine has no server", and
+# ctest reports that as skipped rather than failed.
+if(PIPEWIRE_FOUND)
+    add_test(NAME hal-pipewire COMMAND hal pipewire)
+    set_tests_properties(hal-pipewire PROPERTIES SKIP_RETURN_CODE 77)
+endif()
 
 add_executable(queue queue.c)
 target_link_libraries(queue PRIVATE Audio m dispatch)
@@ -92,6 +98,9 @@ string(REPLACE ";" ":" _agora_ld_path "${_agora_runtime_dirs}")
 set(_agora_audio_tests api-layout api-macros api-cxx api-objc api-prototypes format converter file hal queue unit hosttime auv3)
 if(ALSA_FOUND)
     list(APPEND _agora_audio_tests hal-alsa)
+endif()
+if(PIPEWIRE_FOUND)
+    list(APPEND _agora_audio_tests hal-pipewire)
 endif()
 set_tests_properties(${_agora_audio_tests} PROPERTIES
     ENVIRONMENT "LD_LIBRARY_PATH=${_agora_ld_path}")

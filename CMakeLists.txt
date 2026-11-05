@@ -56,8 +56,22 @@ if(ALSA_FOUND)
   message(STATUS "libagora-audio: ALSA backend (libasound ${ALSA_VERSION})")
 elseif(AGORA_AUDIO_WITH_ALSA STREQUAL "ON")
   message(FATAL_ERROR "libagora-audio: AGORA_AUDIO_WITH_ALSA=ON but pkg-config found no alsa")
-else()
-  message(STATUS "libagora-audio: no ALSA backend (null only)")
+endif()
+
+# PipeWire is the third backend, and the one a modern desktop actually talks to. The pkg-config name is
+# `libpipewire-0.3`, not `pipewire-0.3`: the library is `libpipewire-0.3` and the module file says so.
+set(AGORA_AUDIO_WITH_PIPEWIRE AUTO CACHE STRING "Build the PipeWire backend (AUTO, ON, OFF)")
+if(PKG_CONFIG_FOUND AND NOT AGORA_AUDIO_WITH_PIPEWIRE STREQUAL "OFF")
+  pkg_check_modules(PIPEWIRE IMPORTED_TARGET libpipewire-0.3)
+endif()
+if(PIPEWIRE_FOUND)
+  message(STATUS "libagora-audio: PipeWire backend (libpipewire ${PIPEWIRE_VERSION})")
+elseif(AGORA_AUDIO_WITH_PIPEWIRE STREQUAL "ON")
+  message(FATAL_ERROR "libagora-audio: AGORA_AUDIO_WITH_PIPEWIRE=ON but pkg-config found no libpipewire-0.3")
+endif()
+
+if(NOT ALSA_FOUND AND NOT PIPEWIRE_FOUND)
+  message(STATUS "libagora-audio: no system audio backend (null only)")
 endif()
 find_package(Threads REQUIRED)
 
@@ -81,6 +95,7 @@ add_library(Audio SHARED
     "${CMAKE_CURRENT_SOURCE_DIR}/AudioHardware.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/AudioHardware-null.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/AudioHardware-alsa.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/AudioHardware-pipewire.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/AudioHardwareDeprecated.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/AudioQueue.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/AudioServices.c"
@@ -98,6 +113,11 @@ target_compile_options(Audio PRIVATE -fblocks)
 if(ALSA_FOUND)
   target_compile_definitions(Audio PRIVATE AGORA_WITH_ALSA=1)
   target_link_libraries(Audio PRIVATE PkgConfig::ALSA)
+endif()
+
+if(PIPEWIRE_FOUND)
+  target_compile_definitions(Audio PRIVATE AGORA_WITH_PIPEWIRE=1)
+  target_link_libraries(Audio PRIVATE PkgConfig::PIPEWIRE)
 endif()
 
 target_include_directories(Audio
