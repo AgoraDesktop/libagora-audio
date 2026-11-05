@@ -263,6 +263,79 @@ static void fn_test_queue(void)
 }
 
 /* ------------------------------------------------------------------------------------------------
+ * The timeline: the door that says the time base broke.
+ *
+ * **A CALLER MIXING ITS OWN CLOCK INTO THE QUEUE'S HAS ONE QUESTION**, and it is not "what time is it" — the queue
+ * answers that — but "has anything happened since I last asked that makes my arithmetic wrong". That is what a
+ * timeline is for, and the three events that must report it are a stop, a start and a reset.
+ * ---------------------------------------------------------------------------------------------- */
+
+static void fn_test_timeline(void)
+{
+	AudioStreamBasicDescription format = fn_pcm(48000.0, 2, 32, kAudioFormatFlagIsFloat | kAudioFormatFlagIsPacked);
+	AudioQueueRef queue = NULL;
+	AudioQueueTimelineRef timeline = NULL;
+	AudioQueueBufferRef buffer = NULL;
+	AudioTimeStamp time;
+	Boolean discontinuity = -1;
+	loop_state state;
+	UInt32 sample;
+	OSStatus status;
+
+	memset(&state, 0, sizeof(state));
+	state.value = 0.25f;
+
+	status = AudioQueueNewOutput(&format, fn_refill, &state, NULL, NULL, 0, &queue);
+	fn_check("a queue for the timeline is created", status == 0 && queue != NULL);
+	if (status != 0) {
+		return;
+	}
+
+	{
+		float *samples;
+
+		AudioQueueAllocateBuffer(queue, 512 * 8, &buffer);
+		samples = buffer->mAudioData;
+		for (sample = 0; sample < 512 * 2; sample++) {
+			samples[sample] = 0.25f;
+		}
+		buffer->mAudioDataByteSize = 512 * 8;
+		AudioQueueEnqueueBuffer(queue, buffer, 0, NULL);
+	}
+
+	fn_check("a timeline is created", AudioQueueCreateTimeline(queue, &timeline) == 0 && timeline != NULL);
+
+	memset(&time, 0, sizeof(time));
+	fn_check("the queue starts", AudioQueueStart(queue, NULL) == 0);
+
+	fn_check("the first look primes the timeline without calling it a discontinuity",
+	         AudioQueueGetCurrentTime(queue, timeline, &time, &discontinuity) == 0 && discontinuity == false);
+	fn_check("the time the timeline reports is sample-valid",
+	         (time.mFlags & kAudioTimeStampSampleTimeValid) != 0);
+
+	fn_sleep_ms(60);
+	fn_check("a second look with nothing broken reports none",
+	         AudioQueueGetCurrentTime(queue, timeline, &time, &discontinuity) == 0 && discontinuity == false);
+
+	fn_check("the queue stops and starts", AudioQueueStop(queue, true) == 0 && AudioQueueStart(queue, NULL) == 0);
+	fn_check("a stop and a start break the time base",
+	         AudioQueueGetCurrentTime(queue, timeline, &time, &discontinuity) == 0 && discontinuity == true);
+	fn_check("the break is reported once, not on every look",
+	         AudioQueueGetCurrentTime(queue, timeline, &time, &discontinuity) == 0 && discontinuity == false);
+
+	fn_check("a reset is a discontinuity too",
+	         AudioQueueReset(queue) == 0
+	         && AudioQueueGetCurrentTime(queue, timeline, &time, &discontinuity) == 0
+	         && discontinuity == true);
+
+	fn_check("without a timeline the answer is always no break",
+	         AudioQueueGetCurrentTime(queue, NULL, &time, &discontinuity) == 0 && discontinuity == false);
+
+	fn_check("the timeline is disposed", AudioQueueDisposeTimeline(queue, timeline) == 0);
+	fn_check("the queue is disposed", AudioQueueDispose(queue, true) == 0);
+}
+
+/* ------------------------------------------------------------------------------------------------
  * The system sounds.
  * ---------------------------------------------------------------------------------------------- */
 
@@ -391,6 +464,21 @@ static void fn_test_system_sounds(void)
 
 	fn_sleep_ms(300);
 
+	/* **TWO ALERTS AT ONCE, AND A COMPLETION THAT FITS THE SOUND.** The defect this replaced was a single queue whose
+	 * second play restarted the first *and* a block that was called before a sample had been heard. Both are
+	 * measurable: the block must still be uncalled on the next line, and both must be called by the end. */
+	{
+		__block int first = 0;
+		__block int second = 0;
+
+		AudioServicesPlayAlertSoundWithCompletion(kSystemSoundID_UserPreferredAlert, ^{ first = 1; });
+		AudioServicesPlayAlertSoundWithCompletion(kSystemSoundID_UserPreferredAlert, ^{ second = 1; });
+
+		fn_check("a completion is not called before the sound has played", first == 0 && second == 0);
+		fn_sleep_ms(600);
+		fn_check("both overlapping alerts complete", first == 1 && second == 1);
+	}
+
 	CFRelease(url);
 	unlink(path);
 }
@@ -402,6 +490,7 @@ int main(void)
 	fn_agora_audio_set_driver("null");
 
 	fn_test_queue();
+	fn_test_timeline();
 	fn_test_mono_mapping();
 	fn_test_system_sounds();
 
@@ -410,6 +499,7 @@ int main(void)
 		return 1;
 	}
 
-	printf("queue: the buffered model plays, scales and stops; the system sounds are audible\n");
+	printf("queue: the buffered model plays, scales and stops; a timeline reports the breaks; "
+	       "the system sounds are audible and can overlap\n");
 	return 0;
 }

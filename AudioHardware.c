@@ -107,13 +107,14 @@ static struct {
 
 static void fn_init(void);
 
-/* What a caller gets when it does not choose: the session's own sound server if one answers, and the null device
- * otherwise. A property read cannot ask "would a stream work?" without opening one, so the probe is the device
- * count — PipeWire describes no sinks without its daemon, and sndio opens no handle without its server, which is
- * exactly the fallback condition for both. ALSA is deliberately not in this chain: it describes a device whether
- * or not a card exists, so choosing it automatically would turn "no sound card" into "playback errors" on
- * machines that have neither. The order is the platform's own: PipeWire on Linux, sndio on the BSDs, and either
- * probe is a no-op where the server is not. */
+/* What a caller gets when it does not choose: the session's own sound server if one answers, then ALSA, and the null
+ * device otherwise. A property read cannot ask "would a stream work?" without opening one, so the probe is the device
+ * count — PipeWire describes no sinks without its daemon, sndio opens no handle without its server, and ALSA *opens the
+ * PCM* (`fn_alsa_device_count` is a real `snd_pcm_open`/`close`, added in phase 7 for exactly this reason) rather than
+ * describing a card that may not be there. **That open is what makes ALSA safe in this chain**: before it, "no sound
+ * card" and "a sound card" were the same answer from ALSA, so choosing it automatically would have turned a container
+ * into playback errors. The order is the platform's own: PipeWire on Linux, sndio on the BSDs, ALSA on a bare machine
+ * with a card and no session server, and every probe is a no-op where the backend is not compiled in. */
 static const agora_driver *fn_driver_named(const char *name)
 {
 	if (name == NULL) {
@@ -138,12 +139,16 @@ static const agora_driver *fn_driver_default(void)
 {
 	const agora_driver *pipewire = fn_agora_driver_pipewire();
 	const agora_driver *sndio = fn_agora_driver_sndio();
+	const agora_driver *alsa = fn_agora_driver_alsa();
 
 	if (pipewire != NULL && pipewire->device_count() > 0) {
 		return pipewire;
 	}
 	if (sndio != NULL && sndio->device_count() > 0) {
 		return sndio;
+	}
+	if (alsa != NULL && alsa->device_count() > 0) {
+		return alsa;
 	}
 	return fn_agora_driver_null();
 }

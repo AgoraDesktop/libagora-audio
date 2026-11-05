@@ -57,6 +57,16 @@ typedef struct {
 	AudioQueuePropertyID       id;
 } queue_listener;
 
+/* **A TIMELINE IS A REMEMBERED MOMENT, NOT A CLOCK.** It holds what the queue's time base was at the caller's last
+ * look, so the next look can answer the one question the caller cannot: whether anything happened in between that
+ * makes its own arithmetic wrong — a start, a stop, a reset, or a sample time that went backwards. */
+struct OpaqueAudioQueueTimeline {
+	AudioQueueRef queue;
+	UInt32        generation;
+	UInt64        frames;
+	bool          primed;
+};
+
 struct OpaqueAudioQueue {
 	AudioStreamBasicDescription format;
 	AudioDeviceID               device;
@@ -97,6 +107,10 @@ struct OpaqueAudioQueue {
 	bool                        metering;
 	UInt64                      frames_played;
 	AudioTimeStamp              last_time;
+
+	/* **THE TIME BASE BREAKS WHENEVER THE QUEUE IS STARTED, STOPPED OR RESET**, and a timeline's whole job is to say
+	 * that it did: a caller mixing its own clock into ours has to know when the two stopped agreeing. */
+	UInt32                      generation;
 
 	queue_listener              listeners[AGORA_QUEUE_MAX_LISTENERS];
 };
@@ -733,6 +747,7 @@ OSStatus AudioQueueStart(AudioQueueRef inAQ, const AudioTimeStamp *inStartTime)
 		}
 
 		inAQ->running = true;
+		inAQ->generation++;
 		fn_notify(inAQ, kAudioQueueProperty_IsRunning);
 	}
 
@@ -781,6 +796,7 @@ OSStatus AudioQueueStop(AudioQueueRef inAQ, Boolean inImmediate)
 
 	pthread_mutex_lock(&inAQ->lock);
 	inAQ->running = false;
+	inAQ->generation++;
 	pthread_mutex_unlock(&inAQ->lock);
 
 	/* The io proc id is the proc pointer, which is how `AudioDeviceDestroyIOProcID` finds it. */
@@ -821,11 +837,23 @@ OSStatus AudioQueueFlush(AudioQueueRef inAQ)
 
 OSStatus AudioQueueReset(AudioQueueRef inAQ)
 {
-	OSStatus status = AudioQueueFlush(inAQ);
+	OSStatus status;
+
+	if (inAQ == NULL) {
+		return kAudio_ParamError;
+	}
+
+	status = AudioQueueFlush(inAQ);
 
 	if (status == 0 && inAQ->converter != NULL) {
 		AudioConverterReset(inAQ->converter);
 	}
+
+	/* **A RESET IS A DISCONTINUITY BY DEFINITION**: the queued audio is gone, so any time a caller derived from it is
+	 * no longer the queue's time. */
+	pthread_mutex_lock(&inAQ->lock);
+	inAQ->generation++;
+	pthread_mutex_unlock(&inAQ->lock);
 
 	return status;
 }
@@ -1056,32 +1084,49 @@ OSStatus AudioQueueRemovePropertyListener(AudioQueueRef inAQ, AudioQueueProperty
 OSStatus AudioQueueGetCurrentTime(AudioQueueRef inAQ, AudioQueueTimelineRef inTimeline,
                                   AudioTimeStamp *outTimeStamp, Boolean *outDiscontinuity)
 {
-	(void)inTimeline;
+	bool discontinuity = false;
 
 	if (inAQ == NULL) {
 		return kAudio_ParamError;
 	}
+	if (inTimeline != NULL && inTimeline->queue != inAQ) {
+		return kAudioQueueErr_InvalidParameter;
+	}
 
-	if (outDiscontinuity != NULL) {
-		*outDiscontinuity = false;
+	pthread_mutex_lock(&inAQ->lock);
+
+	if ((inAQ->last_time.mFlags & kAudioTimeStampSampleTimeValid) == 0) {
+		memset(&inAQ->last_time, 0, sizeof(inAQ->last_time));
+		inAQ->last_time.mFlags = kAudioTimeStampSampleTimeValid | kAudioTimeStampHostTimeValid;
+		inAQ->last_time.mHostTime = AudioGetCurrentHostTime();
+	}
+
+	if (inTimeline != NULL) {
+		/* **THE FIRST LOOK PRIMES IT; EVERY LATER ONE COMPARES.** A discontinuity is reported once — the caller acts
+		 * on it by resetting its own clock — and a sample time that moved backwards is the same event. */
+		discontinuity = inTimeline->primed
+		             && (inTimeline->generation != inAQ->generation
+		                 || inAQ->frames_played < inTimeline->frames);
+		inTimeline->generation = inAQ->generation;
+		inTimeline->frames = inAQ->frames_played;
+		inTimeline->primed = true;
 	}
 
 	if (outTimeStamp != NULL) {
-		pthread_mutex_lock(&inAQ->lock);
-		if ((inAQ->last_time.mFlags & kAudioTimeStampSampleTimeValid) == 0) {
-			memset(&inAQ->last_time, 0, sizeof(inAQ->last_time));
-			inAQ->last_time.mFlags = kAudioTimeStampSampleTimeValid | kAudioTimeStampHostTimeValid;
-			inAQ->last_time.mHostTime = AudioGetCurrentHostTime();
-		}
 		*outTimeStamp = inAQ->last_time;
-		pthread_mutex_unlock(&inAQ->lock);
 	}
+	if (outDiscontinuity != NULL) {
+		*outDiscontinuity = discontinuity;
+	}
+
+	pthread_mutex_unlock(&inAQ->lock);
 
 	return 0;
 }
 
 /* ------------------------------------------------------------------------------------------------
- * The doors this phase refuses, by name.
+ * The doors this phase refuses, by name: offline rendering needs a buffer chain that does not go through a
+ * device, and a processing tap needs a hook inside one. Both are real work and neither has a caller here.
  * ---------------------------------------------------------------------------------------------- */
 
 OSStatus AudioQueueOfflineRender(AudioQueueRef inAQ, const AudioTimeStamp *inTimestamp,
@@ -1097,18 +1142,33 @@ OSStatus AudioQueueOfflineRender(AudioQueueRef inAQ, const AudioTimeStamp *inTim
 
 OSStatus AudioQueueCreateTimeline(AudioQueueRef inAQ, AudioQueueTimelineRef *outTimeline)
 {
-	(void)inAQ;
-	(void)outTimeline;
+	AudioQueueTimelineRef timeline;
 
-	return kAudioQueueErr_InvalidRunState;
+	if (inAQ == NULL || outTimeline == NULL) {
+		return kAudio_ParamError;
+	}
+
+	timeline = calloc(1, sizeof(*timeline));
+	if (timeline == NULL) {
+		return kAudio_MemFullError;
+	}
+	timeline->queue = inAQ;
+
+	*outTimeline = timeline;
+	return 0;
 }
 
 OSStatus AudioQueueDisposeTimeline(AudioQueueRef inAQ, AudioQueueTimelineRef inTimeline)
 {
-	(void)inAQ;
-	(void)inTimeline;
+	if (inAQ == NULL || inTimeline == NULL) {
+		return kAudio_ParamError;
+	}
+	if (inTimeline->queue != inAQ) {
+		return kAudioQueueErr_InvalidParameter;
+	}
 
-	return kAudioQueueErr_InvalidRunState;
+	free(inTimeline);
+	return 0;
 }
 
 OSStatus AudioQueueProcessingTapNew(AudioQueueRef inAQ, AudioQueueProcessingTapCallback inCallback,

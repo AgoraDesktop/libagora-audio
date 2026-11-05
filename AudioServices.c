@@ -15,15 +15,22 @@
  * with a decaying envelope: 0.25 s at 44.1 kHz, stereo, float. That is a sound a person hears as a beep, it
  * needs no asset and no licence, and `tests/queue.c` can measure it rather than trusting that it plays.
  *
- * ONE QUEUE, REUSED, BECAUSE A BUZZER IS NOT A MIXER. Two alerts in a row restart the queue — the second one
- * is what the user asked to hear — and the buffer of the first is freed by the completion path rather than
- * leaked.
+ * **A SMALL POOL OF QUEUES, BECAUSE TWO BUZZERS ARE A REAL THING** — a message arrives while another is being
+ * announced — and because a completion block that fires before the sound has been heard is a lie. Four channels, each
+ * one queue with one buffer in flight; a play takes a free channel whose format matches (or builds one), and a fifth
+ * simultaneous sound takes the channel that started longest ago, which is the interrupt a person expects. The buffer is
+ * freed, the block is called and the registered `AudioServicesSystemSoundCompletionProc` is called when the *queue* hands
+ * the buffer back, which is when the sound has actually played.
  */
 
 #include <AudioToolbox/AudioServices.h>
 #include <AudioToolbox/AudioQueue.h>
 #include "AudioToolbox_internal.h"
 
+/* **A STORED BLOCK IS COPIED, AND THE COMPILER DOES NOT DO THAT FOR YOU.** `Block.h` is the runtime's, which is why this
+ * file includes it: the block a caller hands to `...WithCompletion` lives on that caller's frame, and a copy is the only
+ * thing that survives the return. */
+#include <Block.h>
 #include <math.h>
 #include <pthread.h>
 #include <stdlib.h>
@@ -41,13 +48,24 @@ typedef struct {
 	void *                      completion_client;
 } agora_system_sound;
 
+#define AGORA_SERVICES_MAX_CHANNELS 4
+
+/* One queue, one buffer in flight, and what to say when it comes back. */
 typedef struct {
-	pthread_mutex_t    lock;
-	agora_system_sound sounds[AGORA_MAX_SOUNDS];
-	SystemSoundID       next_id;
-	AudioQueueRef       queue;
-	AudioStreamBasicDescription queue_format;
-	AudioQueueBufferRef playing;
+	AudioQueueRef               queue;
+	AudioStreamBasicDescription format;
+	AudioQueueBufferRef         playing;
+	SystemSoundID               id;
+	bool                        busy;
+	UInt64                      started;		/* host time, so the oldest channel can be interrupted */
+	void (^                      completion)(void);	/* COPIED; released when it has been called */
+} services_channel;
+
+typedef struct {
+	pthread_mutex_t     lock;
+	agora_system_sound  sounds[AGORA_MAX_SOUNDS];
+	SystemSoundID        next_id;
+	services_channel     channels[AGORA_SERVICES_MAX_CHANNELS];
 } agora_services;
 
 static agora_services g_services = { .lock = PTHREAD_MUTEX_INITIALIZER, .next_id = 0x1001 };
@@ -65,37 +83,107 @@ static agora_system_sound *fn_sound(SystemSoundID id)
 	return NULL;
 }
 
-/* The buffer is ours, so it is freed here and the queue is reset for the next sound. */
-static void fn_played(void *client, AudioQueueRef queue, AudioQueueBufferRef buffer)
+/* **CALLED BY THE QUEUE WHEN THE BUFFER HAS BEEN PLAYED, WHICH IS THE ONLY HONEST MOMENT TO SAY "DONE".** The queue's
+ * lock is not held here (the queue releases it around its callback), so taking ours is safe; the completion block is
+ * called with ours released, because a caller's block may play another sound. */
+static void fn_channel_played(void *client, AudioQueueRef queue, AudioQueueBufferRef buffer)
 {
-	(void)client;
-	(void)queue;
+	services_channel *channel = client;
+	void (^completion)(void) = NULL;
+	AudioServicesSystemSoundCompletionProc proc = NULL;
+	void *proc_client = NULL;
+	SystemSoundID id;
 
 	if (buffer != NULL) {
 		AudioQueueFreeBuffer(queue, buffer);
 	}
+
+	pthread_mutex_lock(&g_services.lock);
+	channel->playing = NULL;
+	channel->busy = false;
+	id = channel->id;
+	completion = channel->completion;
+	channel->completion = NULL;
+	{
+		agora_system_sound *sound = fn_sound(id);
+
+		if (sound != NULL) {
+			proc = sound->completion;
+			proc_client = sound->completion_client;
+		}
+	}
+	channel->id = 0;
+	pthread_mutex_unlock(&g_services.lock);
+
+	if (proc != NULL) {
+		proc(id, proc_client);
+	}
+	if (completion != NULL) {
+		completion();
+		Block_release(completion);
+	}
 }
 
-static OSStatus fn_play_locked(const agora_system_sound *sound, void (^completion)(void))
+/* A free channel with this format, else a free one to rebuild, else the oldest. Format is not a hard requirement: a
+ * buzzer is 44.1 kHz and a file's sound may not be, and rebuilding one queue is cheaper than refusing to beep. */
+static services_channel *fn_channel_for(const AudioStreamBasicDescription *format)
 {
+	services_channel *oldest = &g_services.channels[0];
+	UInt32 i;
+
+	for (i = 0; i < AGORA_SERVICES_MAX_CHANNELS; i++) {
+		services_channel *channel = &g_services.channels[i];
+
+		if (!channel->busy) {
+			if (channel->queue == NULL
+			    || memcmp(&channel->format, format, sizeof(*format)) == 0) {
+				return channel;
+			}
+			/* A free channel with the wrong format: keep looking for one that already fits. */
+			if (oldest->busy) {
+				oldest = channel;
+			}
+			continue;
+		}
+		if (oldest->busy && channel->started < oldest->started) {
+			oldest = channel;
+		}
+	}
+
+	if (!oldest->busy) {
+		return oldest;
+	}
+
+	/* Every channel is playing: the oldest one is stopped and reused, which is what a second buzzer sounds like. */
+	AudioQueueStop(oldest->queue, true);
+	if (oldest->queue != NULL) {
+		AudioQueueDispose(oldest->queue, true);
+		oldest->queue = NULL;
+	}
+	oldest->busy = false;
+	oldest->playing = NULL;
+	if (oldest->completion != NULL) {
+		Block_release(oldest->completion);
+		oldest->completion = NULL;
+	}
+	return oldest;
+}
+
+static OSStatus fn_play_locked(const agora_system_sound *sound, SystemSoundID id, void (^completion)(void))
+{
+	services_channel *channel = fn_channel_for(&sound->format);
 	AudioQueueBufferRef buffer = NULL;
 	OSStatus status;
 
-	if (g_services.queue != NULL
-	    && memcmp(&g_services.queue_format, &sound->format, sizeof(AudioStreamBasicDescription)) != 0) {
-		AudioQueueDispose(g_services.queue, true);
-		g_services.queue = NULL;
-	}
-
-	if (g_services.queue == NULL) {
-		status = AudioQueueNewOutput(&sound->format, fn_played, NULL, NULL, NULL, 0, &g_services.queue);
+	if (channel->queue == NULL) {
+		status = AudioQueueNewOutput(&sound->format, fn_channel_played, channel, NULL, NULL, 0, &channel->queue);
 		if (status != 0) {
 			return kAudioServicesSystemSoundUnspecifiedError;
 		}
-		g_services.queue_format = sound->format;
+		channel->format = sound->format;
 	}
 
-	status = AudioQueueAllocateBuffer(g_services.queue, sound->length, &buffer);
+	status = AudioQueueAllocateBuffer(channel->queue, sound->length, &buffer);
 	if (status != 0) {
 		return kAudioServicesSystemSoundUnspecifiedError;
 	}
@@ -103,20 +191,29 @@ static OSStatus fn_play_locked(const agora_system_sound *sound, void (^completio
 	memcpy(buffer->mAudioData, sound->bytes, sound->length);
 	buffer->mAudioDataByteSize = sound->length;
 
-	status = AudioQueueEnqueueBuffer(g_services.queue, buffer, 0, NULL);
+	status = AudioQueueEnqueueBuffer(channel->queue, buffer, 0, NULL);
 	if (status != 0) {
-		AudioQueueFreeBuffer(g_services.queue, buffer);
+		AudioQueueFreeBuffer(channel->queue, buffer);
 		return kAudioServicesSystemSoundUnspecifiedError;
 	}
 
-	status = AudioQueueStart(g_services.queue, NULL);
+	channel->playing = buffer;
+	channel->id = id;
+	channel->busy = true;
+	channel->started = AudioGetCurrentHostTime();
+	channel->completion = (completion != NULL) ? Block_copy(completion) : NULL;
+
+	status = AudioQueueStart(channel->queue, NULL);
 
 	if (status != 0) {
+		channel->busy = false;
+		channel->playing = NULL;
+		AudioQueueFreeBuffer(channel->queue, buffer);
+		if (channel->completion != NULL) {
+			Block_release(channel->completion);
+			channel->completion = NULL;
+		}
 		return kAudioServicesSystemSoundUnspecifiedError;
-	}
-
-	if (completion != NULL) {
-		completion();
 	}
 
 	return kAudioServicesNoError;
@@ -269,7 +366,7 @@ static OSStatus fn_play_id(SystemSoundID inSystemSoundID, bool alert, void (^com
 		fn_build_alert(&generated, generated.bytes);
 
 		pthread_mutex_lock(&g_services.lock);
-		status = fn_play_locked(&generated, completion);
+		status = fn_play_locked(&generated, inSystemSoundID, completion);
 		pthread_mutex_unlock(&g_services.lock);
 		free(generated.bytes);
 		return status;
@@ -277,7 +374,8 @@ static OSStatus fn_play_id(SystemSoundID inSystemSoundID, bool alert, void (^com
 
 	pthread_mutex_lock(&g_services.lock);
 	sound = fn_sound(inSystemSoundID);
-	status = (sound != NULL) ? fn_play_locked(sound, completion) : kAudioServicesSystemSoundUnspecifiedError;
+	status = (sound != NULL) ? fn_play_locked(sound, inSystemSoundID, completion)
+	                          : kAudioServicesSystemSoundUnspecifiedError;
 	pthread_mutex_unlock(&g_services.lock);
 
 	(void)alert;

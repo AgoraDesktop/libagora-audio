@@ -51,9 +51,37 @@ typedef struct {
 static alsa_engine g_alsa;
 static pthread_mutex_t g_alsa_lock = PTHREAD_MUTEX_INITIALIZER;
 
+/* **THE PROBE IS A REAL OPEN, BECAUSE ALSA DESCRIBES A DEVICE THAT MAY NOT EXIST.** `snd_pcm_open` on the default
+ * PCM is the only question whose answer means anything: with no card, or with a card claimed by something else, it
+ * fails, and the HAL should then report no device rather than a device that fails at `AudioDeviceStart`. The result is
+ * cached for the process, because this is called on every enumeration and an open is not free; `AGORA_AUDIO_ALSA_PCM`
+ * is read once, which is what the environment variable's contract already is.
+ *
+ * MEASURED: on this machine it opens, and the `hal-alsa` leg (against ALSA's `null` PCM) still measures the write loop
+ * — the probe does not keep the handle, so the driver opens it again for playback. */
+static bool fn_alsa_probe(void)
+{
+	static int probed = -1;
+
+	if (probed < 0) {
+		const char *name = getenv("AGORA_AUDIO_ALSA_PCM");
+		const char *pcm_name = (name != NULL && name[0] != '\0') ? name : "default";
+		snd_pcm_t *pcm = NULL;
+
+		probed = (snd_pcm_open(&pcm, pcm_name, SND_PCM_STREAM_PLAYBACK, SND_PCM_NONBLOCK) == 0) ? 1 : 0;
+		if (pcm != NULL) {
+			snd_pcm_close(pcm);
+		}
+		if (probed == 0) {
+			fprintf(stderr, "libagora-audio: ALSA PCM \"%s\" did not open; no ALSA device\n", pcm_name);
+		}
+	}
+	return probed == 1;
+}
+
 static UInt32 fn_alsa_device_count(void)
 {
-	return 1;
+	return fn_alsa_probe() ? 1 : 0;
 }
 
 static bool fn_alsa_device_describe(UInt32 index, agora_device_desc *out)

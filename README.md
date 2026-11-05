@@ -155,9 +155,17 @@ so the driver converts the mixer's interleaved float32 to 32-bit signed in its o
 wrapping at the rails. That is the one conversion the other three backends do not need, and it is the
 interface's, not a choice.
 
-Still to come: the `AudioQueue` input side and timelines, `AUGraph` sub-graphs, and the rest of `AudioFormat`'s
-selectors. `../AUDIO-PLAN.md` §9 is the schedule and §6 the
-header-by-header commitment.
+**A queue also has a timeline, and the system sounds overlap.** `AudioQueueCreateTimeline` is a remembered moment —
+what the queue's time base was at the caller's last look — so `AudioQueueGetCurrentTime` can answer the one question a
+caller mixing its own clock needs: whether a start, a stop or a reset broke the time since then. It is reported once,
+not on every look. `AudioServicesPlaySystemSound` keeps a pool of four queues, so a second alert does not restart the
+first, and a completion block is called when the buffer comes back from the queue rather than before a sample has been
+heard.
+
+Still to come: the `AudioQueue` input side (there is no capture backend in the HAL, so the door refuses by name),
+`AUGraph` sub-graphs (their Carbon doors are not declared), `AudioQueueOfflineRender` and processing taps, and
+`AudioFormat`'s `kAudioFormatProperty_FormatList`. `../AUDIO-PLAN.md` §9 is the schedule and §6 the header-by-header
+commitment.
 
 The three PCM containers are ours rather than a library's: WAV is a little-endian chunk list, AIFF is a
 big-endian one with an 80-bit sample rate, and CAF is a big-endian chunk list with a 64-bit size. MPEG audio is
@@ -184,13 +192,15 @@ naming `AUAudioUnit` needs `NSObject` — and that is why this component sits ab
 `release/components.conf`.
 
 **Which backend a client gets without asking.** `AGORA_AUDIO_DRIVER` names one (`null`, `alsa`, `pipewire`,
-`sndio`) and is the test-and-debug door. With no variable set, the library asks the two *server* backends in the
-order a platform has them — PipeWire, then sndio — and uses the null device if neither answers. Both are probed
-the same way, because both are clients of a server: PipeWire describes no sinks without its daemon, and sndio
-opens no handle without its server, so "the probe found nothing" is the fallback condition. ALSA is not in that
-chain on purpose: it describes a device whether or not a card exists, so choosing it automatically would turn
-"no sound card" on this machine into "playback errors" on a machine that has neither. On a desktop session this
-means a beep reaches the speakers; in a container it means silence and no error.
+`sndio`) and is the test-and-debug door. With no variable set, the library asks in the order a platform has them —
+**PipeWire, then sndio, then ALSA** — and uses the null device if none answers. All three probes are real, and for the
+same reason: a description is not an answer. PipeWire describes no sinks without its daemon, sndio opens no handle
+without its server, and **ALSA's device count is a real `snd_pcm_open`/`close`** — which is what made it safe to put in
+this chain at all. Before that probe, "no sound card" and "a sound card" were the same answer from ALSA, so choosing it
+automatically would have turned a container into playback errors; MEASURED on this machine, with PipeWire unreachable
+(`XDG_RUNTIME_DIR` pointing at an empty directory) the probe reports no ALSA device and the library falls back to
+`null`, while with PipeWire reachable the default is the session's own sink. On a desktop session this means a beep
+reaches the speakers; in a container it means silence and no error.
 
 ```
 $ readelf -d build-prefix/lib/libagora-audio.so | grep -E 'NEEDED|RUNPATH'
