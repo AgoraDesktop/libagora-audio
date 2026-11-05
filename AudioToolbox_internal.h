@@ -151,6 +151,15 @@ typedef struct agora_resampler {
 	UInt32   hist_capacity;  /* frames `hist` can hold */
 	bool     linear;         /* the caller asked for the linear complexity */
 	UInt32   primes;         /* frames of silence prepended at the start */
+	/* **THE KERNEL IS A TABLE, BECAUSE A TABLE IS WHAT MAKES THIS REAL TIME.** The filter is a windowed sinc
+	 * evaluated at a fractional position, and `sin` and `cos` per tap per channel per output frame cost 128 libm calls
+	 * a frame — MEASURED, 25 ms of CPU for 0.2 s of audio, 55x a plain read, which is audible as stutter because the
+	 * client's read happens inside the device's render callback. The coefficients depend only on the fractional
+	 * position, so they are computed once per instance into `phases` rows of `taps` and the inner loop is multiply-add.
+	 */
+	float *  kernel;         /* phases * taps coefficients, computed at init */
+	UInt32   phases;         /* fractional positions the table resolves */
+	UInt32   phase;          /* the row `pos`'s fraction selects */
 } agora_resampler;
 
 bool fn_resampler_init(agora_resampler *rs, UInt32 channels, double ratio, bool linear, UInt32 quality);

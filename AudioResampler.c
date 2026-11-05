@@ -35,7 +35,12 @@
 /* 32 taps: a Hann window over twice the radius, which puts the first image far enough down that the suite
  * measures signal-to-noise in the tens of decibels rather than the units. */
 #define AGORA_RESAMPLER_TAPS 32
+/* 512 fractional positions: a quarter of a thousandth of a sample of phase error, which is far below what the
+ * window's own stopband can resolve, and 32 x 512 floats is 64 KB. */
+#define AGORA_RESAMPLER_PHASES 512
 #define AGORA_RESAMPLER_RADIUS (AGORA_RESAMPLER_TAPS / 2)
+
+static double fn_kernel(const agora_resampler *rs, double distance);
 
 static void fn_ensure_capacity(agora_resampler *rs, UInt32 frames)
 {
@@ -70,6 +75,29 @@ bool fn_resampler_init(agora_resampler *rs, UInt32 channels, double ratio, bool 
 		return false;
 	}
 
+	/* The table: one row per fractional position, one column per tap. */
+	rs->phases = AGORA_RESAMPLER_PHASES;
+	rs->kernel = calloc((size_t)rs->phases * rs->taps, sizeof(float));
+	if (rs->kernel == NULL) {
+		return false;
+	}
+	{
+		UInt32 phase;
+		UInt32 tap;
+
+		for (phase = 0; phase < rs->phases; phase++) {
+			double fraction = (double)phase / (double)rs->phases;
+
+			for (tap = 0; tap < rs->taps; tap++) {
+				/* Tap `tap` is input frame `base - taps/2 + 1 + tap`, so its distance from the output position
+				 * `base + fraction` is the fraction less the tap's offset. */
+				double distance = fraction - (double)((int)tap - (int)(rs->taps / 2) + 1);
+
+				rs->kernel[(size_t)phase * rs->taps + tap] = (float)fn_kernel(rs, distance);
+			}
+		}
+	}
+
 	fn_resampler_reset(rs);
 	return true;
 }
@@ -81,6 +109,7 @@ void fn_resampler_free(agora_resampler *rs)
 	}
 
 	free(rs->hist);
+	free(rs->kernel);
 	memset(rs, 0, sizeof(*rs));
 }
 
@@ -197,31 +226,32 @@ UInt32 fn_resampler_pull(agora_resampler *rs, float *out, UInt32 count)
 					sample = rs->hist[(size_t)index * channels + channel];
 				}
 			} else {
+				/* The coefficients for this fractional position are one row of the table, and the weight that
+				 * normalises them is the row's sum over the taps the history actually holds — the same normalisation
+				 * the per-tap `fn_kernel` calls did, without the transcendentals. */
 				int32_t base = (int32_t)floor(position);
-				int32_t k;
+				int32_t first = base - (int32_t)(rs->taps / 2) + 1;
+				int32_t last = base + (int32_t)(rs->taps / 2);
+				const float *row = rs->kernel + (size_t)rs->phase * rs->taps;
 				double sum = 0.0;
 				double weight = 0.0;
+				int32_t k;
 
-				for (k = base - (int32_t)(rs->taps / 2) + 1; k <= base + (int32_t)(rs->taps / 2); k++) {
-					double coefficient;
+				for (k = first; k <= last; k++) {
+					int32_t tap = k - first;
 					int64_t index;
 
 					if (k < 0) {
 						continue;
 					}
-
 					index = (int64_t)k;
 					if (index >= (int64_t)rs->hist_frames) {
 						break;
 					}
-
-					coefficient = fn_kernel(rs, position - (double)k);
-					sum += coefficient * rs->hist[(size_t)index * channels + channel];
-					weight += coefficient;
+					sum += (double)row[tap] * rs->hist[(size_t)index * channels + channel];
+					weight += (double)row[tap];
 				}
 
-				/* Normalise by the coefficients actually applied, which keeps unity gain when the
-				 * kernel is clipped at the edges of the history. */
 				if (weight > 1e-9) {
 					sample = (float)(sum / weight);
 				}
@@ -231,6 +261,12 @@ UInt32 fn_resampler_pull(agora_resampler *rs, float *out, UInt32 count)
 		}
 
 		rs->pos += 1.0 / rs->ratio;
+		{
+			double fraction = rs->pos - floor(rs->pos);
+			UInt32 phase = (UInt32)(fraction * (double)rs->phases);
+
+			rs->phase = (phase < rs->phases) ? phase : rs->phases - 1;
+		}
 		produced++;
 	}
 
