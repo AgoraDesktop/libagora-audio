@@ -46,6 +46,11 @@ target_link_libraries(hal PRIVATE Audio m dispatch)
 # The suite asserts on the mixer's own output, which is a test hook in the library's private header.
 target_include_directories(hal PRIVATE "${CMAKE_SOURCE_DIR}")
 add_test(NAME hal COMMAND hal)
+# The same suite against the second backend, on ALSA's null PCM: a real `snd_pcm_open` and a real write loop,
+# with no sound card involved. The pacing assertion is the only part it does not make.
+if(ALSA_FOUND)
+    add_test(NAME hal-alsa COMMAND hal alsa)
+endif()
 
 add_executable(hosttime hosttime.c)
 target_link_libraries(hosttime PRIVATE Audio)
@@ -59,5 +64,9 @@ set(_agora_runtime_dirs
     "$<TARGET_FILE_DIR:CoreFoundation::CoreFoundation>")
 list(REMOVE_DUPLICATES _agora_runtime_dirs)
 string(REPLACE ";" ":" _agora_ld_path "${_agora_runtime_dirs}")
-set_tests_properties(api-layout api-macros api-cxx api-prototypes format converter file hal hosttime PROPERTIES
+set(_agora_audio_tests api-layout api-macros api-cxx api-prototypes format converter file hal hosttime)
+if(ALSA_FOUND)
+    list(APPEND _agora_audio_tests hal-alsa)
+endif()
+set_tests_properties(${_agora_audio_tests} PROPERTIES
     ENVIRONMENT "LD_LIBRARY_PATH=${_agora_ld_path}")

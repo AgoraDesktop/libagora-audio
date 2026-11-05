@@ -41,15 +41,16 @@ ExtAudioFile.c           format and rate conversion inside the file door
 AudioFileStream.c        incremental parsing, with a listener and a packet callback
 AudioHardware.c          the object table, the property switch, the listeners, the mixer
 AudioHardware-null.c     one device that exists everywhere, with a real data thread
+AudioHardware-alsa.c     the second backend: `snd_pcm_open` on a name, paced by its own writes
 AudioHardwareDeprecated.c  the pre-10.7 doors, translated into the object API
 tools/refshim/           sixty lines of ours, so clang on Linux can parse Apple's headers
 tools/api-manifest.py    generates tests/api/manifest-10.12.txt from a MacOSX10.12.sdk
 tests/api/               the four identity gates
 ```
 
-**Phase 2 is a first slice: the device layer, addressed through one object API, with the `null` backend.**
-Still to come: the ALSA and PipeWire backends behind the same door, then `AudioQueue`, `AudioServices` and
-`AudioUnit`.
+**Phase 2 — the device layer, addressed through one object API, with two backends: the `null` device that
+exists everywhere, and ALSA for a machine that has a sound card.** Still to come: the PipeWire backend behind
+the same door, then `AudioQueue`, `AudioServices` and `AudioUnit`.
 `../AUDIO-PLAN.md` §9 is the schedule and §6 the header-by-header commitment.
 
 The three containers are ours rather than a library's: WAV is a little-endian chunk list, AIFF is a
@@ -120,7 +121,10 @@ manifest already holds every one of them.
   the output stream and its float32 stereo format, a volume write that reads back, a listener that fires once
   and then goes quiet when removed, the deprecated door answering the same value, two io procs calling at the
   device's rate (**12 000 frames in 250 ms, ±20%**), the mixer summing them to **0.375**, mute silencing it,
-  stop stopping it, and a sample time translating to a host time.
+  stop stopping it, and a sample time translating to a host time. **The same suite runs a second time on the
+  ALSA backend** against its `null` PCM — a real `snd_pcm_open`, a real write loop, no sound card — where
+  everything holds except the pacing assertion, which is a fact about the plugin rather than about this
+  library.
 - **`file`** — WAV, AIFF and CAF each written, closed, reopened and compared with `memcmp`: **bit-exact**,
   with the byte count, packet count, duration and data format checked separately; then `ExtAudioFile`
   converting int16 → float32 → int16 exactly, and a 44.1 kHz client writing a 48 kHz file, which lands

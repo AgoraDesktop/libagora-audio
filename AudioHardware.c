@@ -175,8 +175,14 @@ static void fn_init(void)
 	if (g_hal.driver == NULL) {
 		const char *requested = getenv("AGORA_AUDIO_DRIVER");
 
-		g_hal.driver = fn_agora_driver_null();
-		(void)requested;	/* other backends arrive with their phase; the null one is always there */
+		if (requested != NULL && strcmp(requested, "alsa") == 0) {
+			g_hal.driver = fn_agora_driver_alsa();
+		}
+		if (g_hal.driver == NULL) {
+			/* The null backend is the one that is always there; a request for a backend this build does not
+			 * have falls back to it rather than failing to make a sound at all. */
+			g_hal.driver = fn_agora_driver_null();
+		}
 	}
 
 	count = g_hal.driver->device_count();
@@ -257,11 +263,20 @@ static void fn_init(void)
 
 void fn_agora_audio_set_driver(const char *name)
 {
-	(void)name;
-	/* One backend this phase. The hook exists so a suite states its backend in code rather than inheriting
-	 * one from the shell, and so the ALSA and PipeWire phases have the seam they need. */
-	g_hal.driver = fn_agora_driver_null();
+	/* A suite states its backend in code rather than inheriting one from the shell, which is the difference
+	 * between a measurement and a coincidence. An unavailable backend falls back to null. */
+	g_hal.driver = NULL;
 	g_hal.initialised = false;
+	g_hal.device_count = 0;
+	memset(g_hal.devices, 0, sizeof(g_hal.devices));
+	memset(g_hal.listeners, 0, sizeof(g_hal.listeners));
+
+	if (name != NULL && strcmp(name, "alsa") == 0) {
+		g_hal.driver = fn_agora_driver_alsa();
+	}
+	if (g_hal.driver == NULL) {
+		g_hal.driver = fn_agora_driver_null();
+	}
 }
 
 void fn_agora_audio_test_peaks(AudioDeviceID id, float *out_peak, UInt64 *out_frames)

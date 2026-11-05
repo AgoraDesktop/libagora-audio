@@ -40,6 +40,22 @@ endif()
 
 find_package(CoreFoundation CONFIG REQUIRED)
 find_package(dispatch CONFIG REQUIRED)
+
+# **A BACKEND IS COMPILED WHEN ITS SYSTEM LIBRARY IS THERE, AND THE BUILD SAYS WHICH.** ALSA is the second
+# backend; PipeWire and sndio arrive with their phases. `-DAGORA_AUDIO_WITH_ALSA=OFF` builds without it and
+# the HAL falls back to the null device.
+set(AGORA_AUDIO_WITH_ALSA AUTO CACHE STRING "Build the ALSA backend (AUTO, ON, OFF)")
+find_package(PkgConfig QUIET)
+if(PKG_CONFIG_FOUND AND NOT AGORA_AUDIO_WITH_ALSA STREQUAL "OFF")
+  pkg_check_modules(ALSA IMPORTED_TARGET alsa)
+endif()
+if(ALSA_FOUND)
+  message(STATUS "libagora-audio: ALSA backend (libasound ${ALSA_VERSION})")
+elseif(AGORA_AUDIO_WITH_ALSA STREQUAL "ON")
+  message(FATAL_ERROR "libagora-audio: AGORA_AUDIO_WITH_ALSA=ON but pkg-config found no alsa")
+else()
+  message(STATUS "libagora-audio: no ALSA backend (null only)")
+endif()
 find_package(Threads REQUIRED)
 
 # ---------------------------------------------------------------------------
@@ -61,6 +77,7 @@ add_library(Audio SHARED
     "${CMAKE_CURRENT_SOURCE_DIR}/AudioFileStream.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/AudioHardware.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/AudioHardware-null.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/AudioHardware-alsa.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/AudioHardwareDeprecated.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/ExtAudioFile.c")
 
@@ -68,6 +85,11 @@ set_target_properties(Audio PROPERTIES OUTPUT_NAME agora-audio)
 
 # The HAL's listener and io-proc doors are block-based, as Apple's are, so the declarations need -fblocks.
 target_compile_options(Audio PRIVATE -fblocks)
+
+if(ALSA_FOUND)
+  target_compile_definitions(Audio PRIVATE AGORA_WITH_ALSA=1)
+  target_link_libraries(Audio PRIVATE PkgConfig::ALSA)
+endif()
 
 target_include_directories(Audio
     PRIVATE

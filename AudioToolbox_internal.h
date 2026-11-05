@@ -128,6 +128,7 @@ typedef struct agora_driver {
 
 /* The backends. Only the null one exists in this phase. */
 const agora_driver * fn_agora_driver_null(void);
+const agora_driver * fn_agora_driver_alsa(void);
 
 /* The backend to use: `AGORA_AUDIO_DRIVER` if set, else the first that can fail honestly. A suite calls the
  * `fn_` form so a developer's shell cannot change what a test measured. */
