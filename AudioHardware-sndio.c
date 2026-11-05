@@ -190,7 +190,7 @@ static void *fn_sndio_thread(void *argument)
 		UInt32 i;
 		size_t written;
 
-		fn_agora_device_render(engine->device, engine->mix, engine->frames);
+		fn_agora_device_render(engine->device, NULL, engine->mix, engine->frames);
 
 		/* FLOAT TO 32-BIT SIGNED, once per sample, clamped rather than wrapped: a mixer that saturates at the
 		 * rails must not turn +1.0 into -1.0 on the way out. */

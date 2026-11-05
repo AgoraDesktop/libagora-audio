@@ -18,14 +18,19 @@
  * **VOLUME IS A PARAMETER HERE, NOT A PROPERTY** — `kAudioQueueParam_Volume`, set with
  * `AudioQueueSetParameter`. 10.12 has no `kAudioQueueProperty_Volume`, and this header does not invent one.
  *
- * WHAT IS IMPLEMENTED: output queues over the default output device, in linear PCM of any supported
- * description, resampled and converted to the device's format with `AudioConverter`; the queue's timeline;
- * offline rendering; and one processing tap, which sees the queue's decoded audio in the client's format.
+ * WHAT IS IMPLEMENTED: input and output queues over the default input and output devices, in linear PCM of any
+ * supported description, resampled and converted with `AudioConverter`; the queue's timeline; offline rendering; and
+ * one processing tap per queue, which sees the queue's audio in the client's format.
+ *
+ * **AN INPUT QUEUE IS THE SAME OBJECT RUNNING BACKWARDS**: the caller enqueues empty buffers, the queue fills them
+ * from the device's input and hands them back, and what the output side does to the client's audio (map, convert,
+ * tap) it does in the other order. A capture queue's volume parameter is stored but not applied — a recording has no
+ * playback gain to apply it to — and `AudioQueueProcessingTapGetQueueTime` refuses on its tap, because nothing is
+ * waiting to be played.
  *
  * **A TAP HERE SEES THE SOURCE BEFORE THE QUEUE'S OWN CONVERSION, MAPPING AND VOLUME**, because those are the tail
  * of the pipeline. That is exactly what Apple's header promises for a PreEffects tap; a PostEffects tap is reported
- * as such but the queue has no effects between the two to place it after, so it hears the same audio. Input queues
- * and processing taps on them are declared-and-refused by name: there is no capture backend in the device layer.
+ * as such but the queue has no effects between the two to place it after, so it hears the same audio.
  */
 #ifndef AGORA_AUDIOTOOLBOX_AUDIOQUEUE_H
 #define AGORA_AUDIOTOOLBOX_AUDIOQUEUE_H
@@ -170,7 +175,7 @@ AudioQueueNewOutputWithDispatchQueue(AudioQueueRef _Nullable * _Nonnull outAQ,
                                      dispatch_queue_t _Nonnull         inCallbackRunLoop,
                                      AudioQueueOutputCallbackBlock _Nonnull inCallbackProc);
 
-/* Input queues: declared, refused (see the header comment). */
+/* Input queues: the same buffered model, filled from the device instead of played into it. */
 extern OSStatus
 AudioQueueNewInput(const AudioStreamBasicDescription * inFormat,
                    AudioQueueInputCallback            inCallbackProc,

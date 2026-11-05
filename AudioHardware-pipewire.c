@@ -454,7 +454,7 @@ static void fn_pw_on_process(void *data)
 				return;
 			}
 
-			fn_agora_device_render(engine->device, samples, frames);
+			fn_agora_device_render(engine->device, NULL, samples, frames);
 
 			spa_buffer->datas[0].chunk->offset = 0;
 			spa_buffer->datas[0].chunk->stride = (int32_t)stride;

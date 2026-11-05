@@ -117,7 +117,7 @@ static void *fn_alsa_thread(void *argument)
 	while (!engine->quit) {
 		snd_pcm_sframes_t written;
 
-		fn_agora_device_render(engine->device, mix, engine->frames);
+		fn_agora_device_render(engine->device, NULL, mix, engine->frames);
 
 		written = snd_pcm_writei(engine->pcm, mix, (snd_pcm_uframes_t)engine->frames);
 		if (written < 0) {

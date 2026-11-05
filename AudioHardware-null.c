@@ -14,6 +14,14 @@
  * IT PLAYS NOTHING, AND THAT IS THE POINT. A test that needs a sound card is a test that does not run on a
  * build box; this backend is the one CI and a headless machine both have. It is also the model every later
  * backend is written against: describe your devices, run a thread, call the mixer.
+ *
+ * IT ALSO HEARS A RAMP, WHICH IS THE SAME IDEA FOR CAPTURE. A device with no input would make every recording
+ * test need hardware, so the device the tests already have describes an input stream too, and its data thread
+ * produces a source the suites can predict exactly: frame `n` of the device's life carries
+ * `(n % rate) / rate` on the left and **half that on the right**. A ramp is chosen over a tone because the
+ * question a capture test asks is not "is this audio" but "are these the frames, in this order, without a gap" —
+ * and a ramp answers that in one subtraction. The two channels differing by a factor of two is what makes the
+ * channel map measurable as well: a client that sums them must measure 0.75, and one that plays them must not.
  */
 
 #include <CoreAudio/AudioHardware.h>
@@ -34,6 +42,7 @@ typedef struct {
 	UInt32         channels;
 	double         rate;
 	bool           quit;
+	UInt64         captured;	/* frames of the synthetic source produced so far */
 } null_engine;
 
 static null_engine g_engine;
@@ -58,20 +67,46 @@ static bool fn_null_device_describe(UInt32 index, agora_device_desc *out)
 	out->nominal_rate = 48000.0;
 	out->buffer_frames = 512;
 	out->channels = 2;
-	out->has_input = false;
+	out->has_input = true;
 	out->has_output = true;
 	out->terminal_type = kAudioStreamTerminalTypeSpeaker;
 
 	return true;
 }
 
+/** The synthetic source: frame `n` is a ramp over one second of the device's life, and the right channel is half
+ * the left. Both values are computed rather than stored, so a suite can predict any frame from its index. */
+static void fn_null_capture(null_engine *engine, float *capture, UInt32 frames)
+{
+	UInt32 period = (UInt32)engine->rate;
+	UInt32 frame;
+	UInt32 channel;
+
+	if (period == 0) {
+		period = 48000;
+	}
+
+	for (frame = 0; frame < frames; frame++) {
+		float ramp = (float)((engine->captured + frame) % period) / (float)period;
+
+		for (channel = 0; channel < engine->channels; channel++) {
+			capture[frame * engine->channels + channel] = (channel == 0) ? ramp : ramp * 0.5f;
+		}
+	}
+
+	engine->captured += frames;
+}
+
 static void *fn_null_thread(void *argument)
 {
 	null_engine *engine = argument;
 	float *mix = malloc((size_t)engine->frames * engine->channels * sizeof(float));
+	float *capture = malloc((size_t)engine->frames * engine->channels * sizeof(float));
 	struct timespec period;
 
-	if (mix == NULL) {
+	if (mix == NULL || capture == NULL) {
+		free(mix);
+		free(capture);
 		return NULL;
 	}
 
@@ -91,10 +126,12 @@ static void *fn_null_thread(void *argument)
 			break;
 		}
 
-		fn_agora_device_render(engine->device, mix, engine->frames);
+		fn_null_capture(engine, capture, engine->frames);
+		fn_agora_device_render(engine->device, capture, mix, engine->frames);
 	}
 
 	free(mix);
+	free(capture);
 	return NULL;
 }
 
@@ -111,6 +148,7 @@ static bool fn_null_start(AudioDeviceID id)
 		g_engine.channels = 2;
 		g_engine.rate = 48000.0;
 		g_engine.quit = false;
+		g_engine.captured = 0;
 
 		if (pthread_create(&g_engine.thread, NULL, fn_null_thread, &g_engine) == 0) {
 			g_engine.running = true;

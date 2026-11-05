@@ -36,7 +36,7 @@ libagora-audio/AudioToolbox/
     AudioFile.h          WAV, AIFF and CAF
     ExtendedAudioFile.h  a file that speaks the client's format
     AudioFileStream.h    the same containers, parsed as they arrive
-    AudioQueue.h         the buffered playback model
+    AudioQueue.h         the buffered model, both ways: playback and capture
     AudioServices.h      the system sounds, and a generated alert
     AudioComponent.h     what a unit is before it is an instance
     AudioUnit.h          scopes, elements, properties and the pull
@@ -180,11 +180,28 @@ has run out, and a **siphon** is shown the source without pulling it and without
 only thing the flags do not buy here is a difference between `PreEffects` and `PostEffects`: this queue has no effects
 between them, so both hear the same audio and only the flag they are reported under differs.
 
-Still to come: the `AudioQueue` input side (there is no capture backend in the HAL — no driver opens a stream for
-reading — so the door refuses by name), `AUGraph` sub-graphs (their Carbon doors are not declared), and
-`AudioFormat`'s `kAudioFormatProperty_FormatList` (the constant is in the manifest but its specifier's shape is not, so
-the door stays refused rather than guessed). `../AUDIO-PLAN.md` §9 is the schedule and §6 the header-by-header
-commitment.
+**And a queue records, which is the same object running backwards.** `AudioQueueNewInput` enqueues *empty* buffers,
+fills them from the default input device and hands them back through the caller's callback: the device's channels are
+mapped to the client's (a mono client hears the sum of two channels over two), the rate and the sample type are
+converted the *other* way (`AudioConverterNew(device, client)` rather than `(client, device)`), and the tap runs on the
+cycle's client-format audio before the caller's buffer does — so a tap on a recording works and its
+`AudioQueueProcessingTapGetQueueTime` refuses with `kAudioQueueErr_InvalidTapType`, because nothing is waiting to be
+played. A draining stop returns at once: a capture queue has nothing to play out. A capture queue's volume parameter is
+stored and not applied, since a recording has no playback gain.
+
+**The HAL grew an input side to make that testable.** `fn_agora_device_render` now takes the cycle's capture as well,
+hands it to every io proc as its `inInputData` (read-only: it is the microphone, and one buffer belongs to the whole
+cycle), and the null device — the one every build has — describes an input stream and *hears a ramp*: frame `n` of its
+life is `(n % rate) / rate` on the left and half that on the right. A ramp rather than a tone because the question a
+capture test asks is not "is this audio" but "are these the frames, in this order, without a gap", and one subtraction
+answers it. The other three drivers open no capture stream yet, so `AudioQueueNewInput` on them answers
+`kAudioQueueErr_InvalidDevice` — honestly, and by name.
+
+Still to come: capture in the real backends (`snd_pcm_open(..., SND_PCM_STREAM_CAPTURE)`, a `PW_DIRECTION_INPUT`
+stream, `sio_open(..., SIO_REC, 0)` — the HAL and the queue are ready for them, and the null device is what a test can
+measure until one exists), `AUGraph` sub-graphs (their Carbon doors are not declared), and `AudioFormat`'s
+`kAudioFormatProperty_FormatList` (the constant is in the manifest but its specifier's shape is not, so the door stays
+refused rather than guessed). `../AUDIO-PLAN.md` §9 is the schedule and §6 the header-by-header commitment.
 
 The three PCM containers are ours rather than a library's: WAV is a little-endian chunk list, AIFF is a
 big-endian one with an 80-bit sample rate, and CAF is a big-endian chunk list with a 64-bit size. MPEG audio is
@@ -290,7 +307,10 @@ skips, exit 77, when there is none):
   the io procs are called) and skips the numbers the server chooses — rate, quantum, channel count, pacing —
   with the suite naming which of the two it is measuring. **A fourth leg is the same suite on `sndio`**, and on
   this machine it reports the honest thing: `hal-sndio` skips (77), because the backend is compiled against
-  libsndio 1.10.0 and no `sndiod` is listening.
+  libsndio 1.10.0 and no `sndiod` is listening. **The input side is measured on the null leg only**, because only that
+  driver describes a capture stream: a default input device exists, it has one input-scope stream whose
+  `kAudioStreamPropertyDirection` says input, and an io proc on it is handed the device's ramp as `inInputData` — every
+  consecutive pair of frames one ramp step apart, so a dropped or duplicated frame fails the assertion.
 - **`unit`** — the registry finds a built-in and does not invent a fourth; an output unit with a callback
   renders 0.5 and the device measures it; a converter turns int16 0.25 into float32 0.25; a two-bus mixer sums
   0.25 + 0.125 to **0.375**, and halving one bus's volume halves its contribution; and a graph of mixer → output
@@ -305,7 +325,10 @@ skips, exit 77, when there is none):
   **end**; `GetQueueTime` answers the quantum's frame count; a second tap, a tap on a running queue and a dispose of
   one are each refused by name; `GetSourceAudio` and `GetQueueTime` outside the callback answer
   `kAudioQueueErr_InvalidTapContext`; and `AudioQueueOfflineRender` goes through the tap too, so a caller writing a
-  file gets the processed audio.
+  file gets the processed audio. **And it records**: an input queue is filled from the device, the ramp's step is what
+  proves the frames are in order, a mono client measures **0.75** of it (the two channels summed and halved rather than
+  one of them), a tap on the recording halves that step and is refused a queue time by name, and a draining stop on a
+  capture queue returns instead of waiting for its own empty buffers.
 - **`auv3`** — every assertion in pairs, because the object is a view of the C unit: the default output unit's
   component description, name, one input bus and one output bus, the bus format **as the unit's own
   `StreamFormat` property reports it**, a format written through the bus arriving at the C door, the maximum

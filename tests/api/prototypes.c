@@ -230,6 +230,16 @@ static OSStatus (*p_AudioQueueNewOutputWithDispatchQueue)(AudioQueueRef _Nullabl
                                                           UInt32, dispatch_queue_t _Nonnull,
                                                           AudioQueueOutputCallbackBlock _Nonnull)
     = AudioQueueNewOutputWithDispatchQueue;
+/* The input side: the same model, filled from the device. */
+static OSStatus (*p_AudioQueueNewInput)(const AudioStreamBasicDescription * _Nonnull,
+                                        AudioQueueInputCallback _Nonnull, void * _Nullable,
+                                        CFRunLoopRef _Nullable, CFStringRef _Nullable, UInt32,
+                                        AudioQueueRef _Nullable * _Nonnull) = AudioQueueNewInput;
+static OSStatus (*p_AudioQueueNewInputWithDispatchQueue)(AudioQueueRef _Nullable * _Nonnull,
+                                                         const AudioStreamBasicDescription * _Nonnull, UInt32,
+                                                         dispatch_queue_t _Nonnull,
+                                                         AudioQueueInputCallbackBlock _Nonnull)
+    = AudioQueueNewInputWithDispatchQueue;
 static OSStatus (*p_AudioQueueAllocateBuffer)(AudioQueueRef _Nonnull, UInt32,
                                               AudioQueueBufferRef _Nullable * _Nonnull)
     = AudioQueueAllocateBuffer;
@@ -379,6 +389,7 @@ int main(void)
 		(void *)p_AudioFileStreamSetProperty, (void *)p_AudioFileStreamSeek,
 		(void *)p_AudioFileStreamClose,
 		(void *)p_AudioQueueNewOutput, (void *)p_AudioQueueNewOutputWithDispatchQueue,
+		(void *)p_AudioQueueNewInput, (void *)p_AudioQueueNewInputWithDispatchQueue,
 		(void *)p_AudioQueueAllocateBuffer, (void *)p_AudioQueueEnqueueBuffer,
 		(void *)p_AudioQueueStart, (void *)p_AudioQueueStop, (void *)p_AudioQueueDispose,
 		(void *)p_AudioQueueFreeBuffer, (void *)p_AudioQueueGetProperty,

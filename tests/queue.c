@@ -128,13 +128,6 @@ static void fn_refill_mono(void *client, AudioQueueRef queue, AudioQueueBufferRe
 	AudioQueueEnqueueBuffer(queue, buffer, 0, NULL);
 }
 
-static void fn_unused_input(void *client, AudioQueueRef queue, AudioQueueBufferRef buffer,
-                            const AudioTimeStamp *time, UInt32 packets,
-                            const AudioStreamPacketDescription *descriptions)
-{
-	(void)client; (void)queue; (void)buffer; (void)time; (void)packets; (void)descriptions;
-}
-
 static void fn_test_queue(void)
 {
 	AudioDeviceID device = fn_default_output();
@@ -234,15 +227,6 @@ static void fn_test_queue(void)
 		fn_check("a property that does not fit is refused by size",
 		         AudioQueueGetProperty(queue, kAudioQueueProperty_StreamDescription, &value, &size)
 		         == kAudioQueueErr_InvalidPropertySize);
-	}
-
-	/* An output queue cannot record, and says so rather than pretending. */
-	{
-		AudioQueueRef input = NULL;
-
-		fn_check("an input queue is refused by name",
-		         AudioQueueNewInput(&format, fn_unused_input, NULL, NULL, NULL, 0, &input)
-		         == kAudioQueueErr_InvalidDevice);
 	}
 
 	fn_check("the queue stops", AudioQueueStop(queue, true) == 0);
@@ -859,6 +843,173 @@ static void fn_test_tap_offline(void)
 	fn_check("the queue is disposed", AudioQueueDispose(queue, true) == 0);
 }
 
+/* ------------------------------------------------------------------------------------------------
+ * Capture: the same object running the other way.
+ *
+ * **THE RAMP IS THE MEASUREMENT.** The null device's input is `(n % 48000) / 48000` on the left and half of that on
+ * the right, so a recorded buffer can be checked in three ways at once: the frames are in order (every step is one
+ * ramp step, and a wrap is a negative jump), the channel map happened (a mono client measures the sum of the two
+ * channels over two — 0.75 of the ramp, not 1.0 and not 0.5), and the audio is not silence. A queue that merely
+ * counted callbacks would satisfy none of them.
+ * ---------------------------------------------------------------------------------------------- */
+
+typedef struct {
+	UInt32 channels;
+	int    calls;
+	UInt32 frames;		/* frames in the last buffer handed back */
+	UInt32 total;		/* frames recorded in all */
+	float  first;		/* the first sample of the first callback */
+	float  second;		/* its second channel, when there is one */
+	float  step_low;	/* the ramp step this queue should measure, as a band */
+	float  step_high;
+	bool   ramp;		/* every step was the expected one (a wrap is allowed) */
+	bool   second_is_half;
+	bool   start_valid;
+} capture_state;
+
+static void fn_captured(void *client, AudioQueueRef queue, AudioQueueBufferRef buffer,
+                        const AudioTimeStamp *time, UInt32 packets,
+                        const AudioStreamPacketDescription *descriptions)
+{
+	capture_state *state = client;
+	float *samples = buffer->mAudioData;
+	UInt32 frames;
+	UInt32 i;
+
+	(void)packets;
+	(void)descriptions;
+
+	frames = buffer->mAudioDataByteSize / (state->channels * (UInt32)sizeof(float));
+
+	state->calls++;
+	state->frames = frames;
+	state->total += frames;
+	if (time != NULL && (time->mFlags & kAudioTimeStampSampleTimeValid) != 0) {
+		state->start_valid = true;
+	}
+
+	for (i = 0; i < frames; i++) {
+		float sample = samples[i * state->channels];
+
+		if (i == 0 && state->calls == 1) {
+			state->first = sample;
+			if (state->channels > 1) {
+				state->second = samples[1];
+			}
+		}
+		if (i > 0) {
+			float delta = sample - samples[(i - 1) * state->channels];
+			bool stepped = (delta > state->step_low && delta < state->step_high) || delta < -0.5f;
+
+			if (!stepped) {
+				state->ramp = false;
+			}
+		}
+	}
+
+	if (state->channels > 1 && state->calls == 1) {
+		state->second_is_half = (state->second == state->first * 0.5f);
+	}
+
+	AudioQueueEnqueueBuffer(queue, buffer, 0, NULL);
+}
+
+static void fn_record(AudioStreamBasicDescription format, UInt32 channels, float step_low, float step_high,
+                      bool with_tap, capture_state *state, tap_state *tap)
+{
+	AudioQueueBufferRef given[2];
+	AudioStreamBasicDescription processing;
+	AudioQueueProcessingTapRef handle = NULL;
+	AudioQueueRef queue = NULL;
+	AudioTimeStamp time;
+	Boolean discontinuity = true;
+	UInt32 max_frames = 0;
+	UInt32 i;
+	OSStatus status;
+
+	memset(state, 0, sizeof(*state));
+	state->channels = channels;
+	state->step_low = step_low;
+	state->step_high = step_high;
+	state->ramp = true;
+	state->second_is_half = true;
+
+	status = AudioQueueNewInput(&format, fn_captured, state, NULL, NULL, 0, &queue);
+	fn_check("an input queue is created", status == 0 && queue != NULL);
+	if (status != 0) {
+		return;
+	}
+
+	if (with_tap) {
+		memset(tap, 0, sizeof(*tap));
+		tap->scale = 0.5f;
+		status = AudioQueueProcessingTapNew(queue, fn_tap, tap, kAudioQueueProcessingTap_PreEffects,
+		                                    &max_frames, &processing, &handle);
+		fn_check("a tap on an input queue is created", status == 0 && handle != NULL);
+	}
+
+	for (i = 0; i < 2; i++) {
+		AudioQueueAllocateBuffer(queue, 512 * channels * (UInt32)sizeof(float), &given[i]);
+		given[i]->mAudioDataByteSize = given[i]->mAudioDataBytesCapacity;
+		fn_check("an empty buffer is enqueued to record into",
+		         AudioQueueEnqueueBuffer(queue, given[i], 0, NULL) == 0);
+	}
+
+	fn_check("the input queue starts", AudioQueueStart(queue, NULL) == 0);
+	fn_sleep_ms(180);
+	/* A capture queue has nothing to play out, so a draining stop must return rather than wait for its own empty
+	 * buffers. A hang here would be a deadlock, not a slow test. */
+	fn_check("the input queue stops, and a drain does not wait for nothing",
+	         AudioQueueStop(queue, false) == 0);
+
+	memset(&time, 0, sizeof(time));
+	fn_check("a recording queue has a clock",
+	         AudioQueueGetCurrentTime(queue, NULL, &time, &discontinuity) == 0
+	             && (time.mFlags & kAudioTimeStampSampleTimeValid) != 0 && time.mSampleTime > 0.0);
+
+	if (handle != NULL) {
+		fn_check("the input queue's tap is disposed", AudioQueueProcessingTapDispose(handle) == 0);
+	}
+	fn_check("the input queue is disposed", AudioQueueDispose(queue, true) == 0);
+}
+
+static void fn_test_capture(void)
+{
+	AudioStreamBasicDescription stereo = fn_pcm(48000.0, 2, 32,
+	                                            kAudioFormatFlagIsFloat | kAudioFormatFlagIsPacked);
+	AudioStreamBasicDescription mono = fn_pcm(48000.0, 1, 32,
+	                                          kAudioFormatFlagIsFloat | kAudioFormatFlagIsPacked);
+	/* One frame up the ramp is 1/48000; a mono client hears the sum of two channels over two, which is 0.75 of the
+	 * left channel, so its step is three quarters of the stereo one. The bands are what turn "it recorded
+	 * something" into "it recorded the right channels". */
+	capture_state stereo_state;
+	capture_state mono_state;
+	capture_state tapped_state;
+	tap_state tap;
+
+	fn_record(stereo, 2, 2.0e-5f, 2.2e-5f, false, &stereo_state, NULL);
+	fn_check("the recording callback is called with full buffers",
+	         stereo_state.calls > 0 && stereo_state.frames == 512);
+	fn_check("a recorded buffer carries the device's own audio", stereo_state.ramp);
+	fn_check("a recorded buffer says when it started", stereo_state.start_valid);
+	fn_check("the right channel is the left one at half scale", stereo_state.second_is_half);
+	printf("      capture: %d buffers, %u frames, first frame %.4f / %.4f\n", stereo_state.calls,
+	       (unsigned)stereo_state.total, (double)stereo_state.first, (double)stereo_state.second);
+
+	/* A mono client on a stereo device: the two channels are summed and halved, which is the map a beep's queue
+	 * does in the other direction. */
+	fn_record(mono, 1, 1.4e-5f, 1.7e-5f, false, &mono_state, NULL);
+	fn_check("a mono client records from a stereo device", mono_state.calls > 0 && mono_state.frames == 512);
+	fn_check("the recording is the device's two channels summed, not one of them", mono_state.ramp);
+
+	/* And a tap on a recording: it sees the client-format audio before the caller's buffer does. */
+	fn_record(stereo, 2, 1.0e-5f, 1.1e-5f, true, &tapped_state, &tap);
+	fn_check("the input queue's tap was called", tap.calls > 0);
+	fn_check("the tap's output is what the caller records", tapped_state.calls > 0 && tapped_state.ramp);
+	fn_check("a recording has no queue time to report",
+	         tap.queue_time_status == kAudioQueueErr_InvalidTapType);
+}
+
 static void fn_test_system_sounds(void)
 {
 	char path[] = "/tmp/agora-queue-XXXXXX";
@@ -954,6 +1105,7 @@ int main(void)
 	fn_test_mono_mapping();
 	fn_test_taps();
 	fn_test_tap_offline();
+	fn_test_capture();
 	fn_test_system_sounds();
 
 	if (g_failures != 0) {

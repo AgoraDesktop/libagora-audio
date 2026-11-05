@@ -1292,12 +1292,14 @@ OSStatus AudioDeviceGetNearestStartTime(AudioObjectID inDevice, AudioTimeStamp *
  * The mixer: what a driver's data thread calls.
  * ---------------------------------------------------------------------------------------------- */
 
-void fn_agora_device_render(AudioDeviceID id, float *mix, UInt32 frames)
+void fn_agora_device_render(AudioDeviceID id, const float *capture, float *mix, UInt32 frames)
 {
 	agora_device *device = fn_device(id);
 	UInt32 channels;
 	UInt32 total;
 	float peak = 0.0f;
+	AudioBufferList in_list;
+	const AudioBufferList *in_capture = NULL;
 	UInt32 i;
 	UInt32 frame;
 
@@ -1308,6 +1310,18 @@ void fn_agora_device_render(AudioDeviceID id, float *mix, UInt32 frames)
 	channels = device->channels;
 	total = frames * channels;
 	memset(mix, 0, (size_t)total * sizeof(float));
+
+	/* **THE INPUT BELONGS TO THE CYCLE, NOT TO A CLIENT.** One capture buffer is taken for the whole device and
+	 * handed to every io proc unchanged, which is what a real device's input is: the same samples for everybody.
+	 * It is read-only for the same reason — a proc that wrote to it would be editing the microphone. */
+	if (capture != NULL) {
+		memset(&in_list, 0, sizeof(in_list));
+		in_list.mNumberBuffers = 1;
+		in_list.mBuffers[0].mNumberChannels = channels;
+		in_list.mBuffers[0].mDataByteSize = (UInt32)((size_t)total * sizeof(float));
+		in_list.mBuffers[0].mData = (void *)capture;
+		in_capture = &in_list;
+	}
 
 	for (i = 0; i < AGORA_MAX_IOPROCS; i++) {
 		agora_ioproc *proc = &device->procs[i];
@@ -1339,17 +1353,14 @@ void fn_agora_device_render(AudioDeviceID id, float *mix, UInt32 frames)
 		out_time = now;
 
 		if (proc->proc != NULL) {
-			/* An output-only device has no input data, and Apple's own io proc signature marks the two
-			 * buffer-list parameters nullable for exactly that reason; a variable keeps the annotation from
-			 * complaining about the literal. */
-			const AudioBufferList *no_input = NULL;
-			/* `inInputTime` is NOT nullable in Apple's signature even when there is no input data, so the
-			 * "when the input would have been" is the same instant as the output's. */
+			/* `inInputData` is NULL for a device with no input — Apple's own io proc signature marks the two
+			 * buffer-list parameters nullable for exactly that reason — and `inInputTime` is NOT, so "when the
+			 * input would have been" is the same instant as the output's. */
 			AudioTimeStamp input_time = now;
 
-			status = proc->proc(id, &now, no_input, &input_time, &list, &out_time, proc->client);
+			status = proc->proc(id, &now, in_capture, &input_time, &list, &out_time, proc->client);
 		} else if (proc->block != NULL) {
-			proc->block(&now, NULL, NULL, &list, &out_time);
+			proc->block(&now, in_capture, NULL, &list, &out_time);
 			status = 0;
 		} else {
 			status = kAudioHardwareUnspecifiedError;

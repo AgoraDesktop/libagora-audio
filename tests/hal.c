@@ -50,6 +50,33 @@ static void fn_sleep_ms(long milliseconds)
 	}
 }
 
+/** Read the mixer's last peak until it says what the caller expects, or a deadline passes.
+ *
+ * **A PROPERTY CHANGE REACHES THE MIXER WHEN THE DEVICE NEXT RENDERS**, and on a live session server that instant is
+ * the server's, not the caller's: this suite read the peak once after a fixed sleep and failed about one run in three
+ * on `hal-pipewire` — on a machine where nothing was wrong. A deadline is the honest way to ask a question about a
+ * clock somebody else owns. */
+static bool fn_peaks_until(AudioDeviceID device, float low, float high, long deadline_ms)
+{
+	long waited = 0;
+
+	for (;;) {
+		float peak = -1.0f;
+
+		fn_agora_audio_test_peaks(device, &peak, NULL);
+		if (peak >= low && peak <= high) {
+			return true;
+		}
+		if (waited >= deadline_ms) {
+			return false;
+		}
+
+		fn_sleep_ms(10);
+		waited += 10;
+	}
+}
+
+
 static AudioDeviceID fn_default_output(void)
 {
 	AudioObjectPropertyAddress address = { kAudioHardwarePropertyDefaultOutputDevice,
@@ -359,15 +386,11 @@ static void fn_test_io_procs(void)
 
 		fn_check("the device mutes",
 		         AudioObjectSetPropertyData(device, &mute, 0, NULL, sizeof(on), &on) == 0);
-		fn_sleep_ms(80);
-		fn_agora_audio_test_peaks(device, &peak, NULL);
-		fn_check("a muted device mixes silence", peak == 0.0f);
+		fn_check("a muted device mixes silence", fn_peaks_until(device, 0.0f, 0.0f, 200));
 
 		on = 0;
 		AudioObjectSetPropertyData(device, &mute, 0, NULL, sizeof(on), &on);
-		fn_sleep_ms(80);
-		fn_agora_audio_test_peaks(device, &peak, NULL);
-		fn_check("unmuting restores the mix", peak > 0.37f && peak < 0.38f);
+		fn_check("unmuting restores the mix", fn_peaks_until(device, 0.37f, 0.38f, 200));
 	}
 
 	fn_check("the device stops", AudioDeviceStop(device, NULL) == 0);
@@ -416,6 +439,126 @@ static void fn_test_clock(void)
 	}
 }
 
+/* ------------------------------------------------------------------------------------------------
+ * The input side of the device: a capture stream, and the io proc that is handed it.
+ *
+ * THE NULL DEVICE HEARS A RAMP, SO THIS IS MEASURABLE WITHOUT A MICROPHONE. Frame `n` of the device's life is
+ * `(n % rate) / rate` on the left and half that on the right, so "the io proc was given the device's input" is one
+ * subtraction: consecutive frames step by 1/48000, and a dropped or duplicated frame is a step that is not. Only the
+ * null backend describes an input, so the other legs say so and move on.
+ * ---------------------------------------------------------------------------------------------- */
+
+typedef struct {
+	int    calls;
+	UInt32 frames;
+	bool   saw_input;
+	bool   ramp;		/* every consecutive pair stepped up the ramp (a wrap is allowed) */
+	bool   half_right;	/* the right channel is half the left, in the same frame */
+} input_watch;
+
+static OSStatus fn_watch_input(AudioObjectID device, const AudioTimeStamp *now, const AudioBufferList *input,
+                               const AudioTimeStamp *input_time, AudioBufferList *output,
+                               const AudioTimeStamp *output_time, void *client)
+{
+	input_watch *watch = client;
+	const float *samples;
+	UInt32 channels;
+	UInt32 frames;
+	UInt32 i;
+
+	(void)device;
+	(void)now;
+	(void)input_time;
+	(void)output;
+	(void)output_time;
+
+	if (input == NULL || input->mNumberBuffers == 0 || input->mBuffers[0].mData == NULL) {
+		return 0;
+	}
+
+	samples = input->mBuffers[0].mData;
+	channels = input->mBuffers[0].mNumberChannels;
+	frames = channels > 0 ? input->mBuffers[0].mDataByteSize / (channels * (UInt32)sizeof(float)) : 0;
+	if (frames < 2 || channels < 2) {
+		return 0;
+	}
+
+	watch->calls++;
+	watch->frames = frames;
+	watch->saw_input = true;
+	watch->half_right = watch->half_right && (samples[1] == samples[0] * 0.5f);
+
+	for (i = 1; i < frames; i++) {
+		float delta = samples[i * channels] - samples[(i - 1) * channels];
+		bool stepped = (delta > 1.5e-5f && delta < 2.5e-5f)	/* one frame up the ramp */
+		            || delta < -0.5f;				/* the one-second wrap */
+
+		if (!stepped) {
+			watch->ramp = false;
+		}
+	}
+
+	return 0;
+}
+
+static void fn_test_input_device(void)
+{
+	input_watch watch;
+	AudioObjectPropertyAddress address = { kAudioHardwarePropertyDefaultInputDevice,
+	                                       kAudioObjectPropertyScopeGlobal,
+	                                       kAudioObjectPropertyElementMaster };
+	AudioDeviceIOProcID proc = NULL;
+	AudioDeviceID input = kAudioObjectUnknown;
+	UInt32 size = sizeof(input);
+
+	if (strcmp(g_driver, "null") != 0) {
+		printf("      input: the %s backend opens no capture stream, so there is nothing to measure\n", g_driver);
+		return;
+	}
+
+	memset(&watch, 0, sizeof(watch));
+	watch.ramp = true;
+	watch.half_right = true;
+
+	fn_check("a default input device exists",
+	         AudioObjectGetPropertyData(kAudioObjectSystemObject, &address, 0, NULL, &size, &input) == 0
+	             && input != kAudioObjectUnknown);
+
+	/* The input scope describes one stream, and the stream says which side of the device it is. */
+	address.mSelector = kAudioDevicePropertyStreams;
+	address.mScope = kAudioObjectPropertyScopeInput;
+	{
+		AudioStreamID streams[4];
+		UInt32 streams_size = sizeof(streams);
+
+		fn_check("the device has one input stream",
+		         AudioObjectGetPropertyData(input, &address, 0, NULL, &streams_size, &streams) == 0
+		             && streams_size == sizeof(AudioStreamID));
+		if (streams_size == sizeof(AudioStreamID)) {
+			AudioObjectPropertyAddress direction = { kAudioStreamPropertyDirection,
+			                                         kAudioObjectPropertyScopeGlobal,
+			                                         kAudioObjectPropertyElementMaster };
+			UInt32 value = 99;
+			UInt32 value_size = sizeof(value);
+
+			fn_check("the stream is an input, by its own direction",
+			         AudioObjectGetPropertyData(streams[0], &direction, 0, NULL, &value_size, &value) == 0
+			             && value == 1);
+		}
+	}
+
+	fn_check("an io proc on the input device is created",
+	         AudioDeviceCreateIOProcID(input, fn_watch_input, &watch, &proc) == 0 && proc != NULL);
+	fn_check("the input device starts", AudioDeviceStart(input, NULL) == 0);
+	fn_sleep_ms(150);
+	fn_check("the io proc is handed the device's input", watch.calls > 0 && watch.saw_input);
+	fn_check("the input is the device's ramp, in order and without a gap", watch.ramp);
+	fn_check("the input's two channels are not the same signal", watch.half_right);
+	printf("      input: %d calls of %u frames\n", watch.calls, (unsigned)watch.frames);
+	fn_check("the input device stops", AudioDeviceStop(input, NULL) == 0);
+	fn_check("the io proc is destroyed", AudioDeviceDestroyIOProcID(input, proc) == 0);
+}
+
 int main(int argc, char *argv[]);
 int main(int argc, char *argv[])
 {
@@ -450,6 +593,7 @@ int main(int argc, char *argv[])
 	fn_test_volume_and_listeners();
 	fn_test_io_procs();
 	fn_test_clock();
+	fn_test_input_device();
 
 	if (g_failures != 0) {
 		fprintf(stderr, "hal: %d failure(s)\n", g_failures);

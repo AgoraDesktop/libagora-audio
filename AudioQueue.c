@@ -96,6 +96,11 @@ struct OpaqueAudioQueueTimeline {
 
 struct OpaqueAudioQueue {
 	AudioStreamBasicDescription format;
+	/* **AN INPUT QUEUE IS THE SAME OBJECT RUNNING BACKWARDS.** It borrows the device, the converter, the stage, the
+	 * channel map and the tap, and what changes is the direction: the device's input is mapped into the client's
+	 * format and handed back in the caller's buffers, instead of the caller's buffers being mapped into the device's
+	 * output. `input` is what every one of those decisions reads. */
+	bool                        input;
 	AudioDeviceID               device;
 	AudioStreamBasicDescription device_format;
 	AudioConverterRef           converter;
@@ -110,6 +115,7 @@ struct OpaqueAudioQueue {
 	bool                        map_channels;
 	float *                     map_scratch;
 	UInt32                      map_capacity;	/* frames the scratch holds */
+	AudioBufferList *           chunk;		/* the converter's destination on a capture queue */
 
 	/* **THE STAGE IS THE CLIENT'S AUDIO IN ONE PIECE.** It is a short FIFO in the client's own format — the form
 	 * a tap processes and the form the converter pulls from — so `stage_offset` is where the source has been
@@ -127,6 +133,8 @@ struct OpaqueAudioQueue {
 
 	AudioQueueOutputCallback        callback;
 	AudioQueueOutputCallbackBlock   block;
+	AudioQueueInputCallback         input_callback;
+	AudioQueueInputCallbackBlock    input_block;
 	dispatch_queue_t                queue;
 	void *                          client;
 
@@ -160,9 +168,11 @@ struct OpaqueAudioQueue {
  * Small helpers.
  * ---------------------------------------------------------------------------------------------- */
 
-static UInt32 fn_device_channels(AudioDeviceID device)
+static UInt32 fn_device_channels(AudioDeviceID device, bool input)
 {
-	AudioObjectPropertyAddress streams = { kAudioDevicePropertyStreams, kAudioObjectPropertyScopeOutput,
+	AudioObjectPropertyAddress streams = { kAudioDevicePropertyStreams,
+	                                       input ? kAudioObjectPropertyScopeInput
+	                                             : kAudioObjectPropertyScopeOutput,
 	                                       kAudioObjectPropertyElementMaster };
 	AudioStreamID list[8];
 	UInt32 size = sizeof(list);
@@ -745,16 +755,228 @@ static OSStatus fn_queue_render(AudioObjectID device, const AudioTimeStamp *now,
 }
 
 /* ------------------------------------------------------------------------------------------------
+ * Capture: the same object running the other way.
+ * ---------------------------------------------------------------------------------------------- */
+
+/* The channel mapping a recording needs: the device's channels summed down to one, or one fanned out to all of them.
+ * It is the output path's `map_channels` seen from the microphone's end, and the same refusal applies at creation: two
+ * counts above one would need a channel layout, which this door does not carry. */
+static void fn_map_input(AudioQueueRef queue, const float *source, UInt32 device_channels, float *destination,
+                         UInt32 client_channels, UInt32 frames)
+{
+	UInt32 frame;
+	UInt32 channel;
+
+	for (frame = 0; frame < frames; frame++) {
+		const float *in = source + (size_t)frame * device_channels;
+		float *out = destination + (size_t)frame * client_channels;
+
+		if (device_channels == 1) {
+			for (channel = 0; channel < client_channels; channel++) {
+				out[channel] = in[0];
+			}
+		} else {
+			float sum = 0.0f;
+
+			for (channel = 0; channel < device_channels; channel++) {
+				sum += in[channel];
+			}
+			out[0] = sum / (float)device_channels;
+		}
+	}
+}
+
+static OSStatus fn_queue_capture(AudioObjectID device, const AudioTimeStamp *now, const AudioBufferList *input,
+                                 const AudioTimeStamp *input_time, AudioBufferList *output,
+                                 const AudioTimeStamp *output_time, void *client)
+{
+	AudioQueueRef queue = client;
+	AudioQueueBufferRef filled[AGORA_QUEUE_MAX_PENDING];
+	UInt32 filled_count = 0;
+	AudioTimeStamp stamp;
+	size_t frame_bytes;
+	const float *source;
+	UInt32 channels;
+	UInt32 available;
+	UInt32 staged = 0;
+	UInt32 i;
+
+	(void)device;
+	(void)input_time;
+	(void)output;
+	(void)output_time;
+
+	if (input == NULL || input->mNumberBuffers == 0 || input->mBuffers[0].mData == NULL) {
+		return 0;
+	}
+
+	pthread_mutex_lock(&queue->lock);
+
+	if (!queue->running) {
+		pthread_mutex_unlock(&queue->lock);
+		return 0;
+	}
+
+	frame_bytes = fn_client_frame_bytes(queue);
+	channels = input->mBuffers[0].mNumberChannels;
+	available = channels > 0 ? input->mBuffers[0].mDataByteSize / (channels * (UInt32)sizeof(float)) : 0;
+	source = input->mBuffers[0].mData;
+
+	/* THE LINE, IN THE ORDER A RECORDING TAKES IT: map the channels, convert the rate and the sample type, then
+	 * the tap, then the caller's buffers — which is the output path's pipeline read from the other end. */
+	if (queue->map_channels && available > 0) {
+		UInt32 client_channels = queue->convert_format.mChannelsPerFrame;
+
+		if (queue->map_capacity < available) {
+			float *grown = realloc(queue->map_scratch, (size_t)available * client_channels * sizeof(float));
+
+			if (grown == NULL) {
+				pthread_mutex_unlock(&queue->lock);
+				return 0;
+			}
+			queue->map_scratch = grown;
+			queue->map_capacity = available;
+		}
+
+		fn_map_input(queue, source, channels, queue->map_scratch, client_channels, available);
+		source = queue->map_scratch;
+		channels = queue->convert_format.mChannelsPerFrame;
+	}
+
+	if (available > 0) {
+		/* The client frames this cycle can carry: the rate ratio, plus the two a converter asks past its window. */
+		double client_rate = queue->format.mSampleRate;
+		double device_rate = queue->device_format.mSampleRate;
+		UInt32 want = (UInt32)((double)available * (client_rate > 0.0 ? client_rate : 1.0)
+		                       / (device_rate > 0.0 ? device_rate : 1.0)) + 2;
+
+		queue->stage_frames = 0;
+		queue->stage_offset = 0;
+
+		if (!fn_stage_reserve(queue, want)) {
+			pthread_mutex_unlock(&queue->lock);
+			return 0;
+		}
+
+		if (queue->converter != NULL) {
+			queue_source in;
+			UInt32 wanted = want;
+			OSStatus status;
+
+			in.data = (const uint8_t *)source;
+			in.bytes = available * channels * (UInt32)sizeof(float);
+			in.delivered = 0;
+			in.bytes_per_frame = channels * (UInt32)sizeof(float);
+
+			fn_list_point(queue->chunk, (uint8_t *)queue->stage, wanted, &queue->format);
+			status = AudioConverterFillComplexBuffer(queue->converter, fn_queue_input, &in, &wanted, queue->chunk,
+			                                          NULL);
+			if (status != 0) {
+				wanted = 0;
+			}
+			staged = wanted;
+		} else {
+			/* Same format: what the device heard is already what the client asked for. */
+			memcpy(queue->stage, source, (size_t)available * frame_bytes);
+			staged = available;
+		}
+	}
+
+	queue->stage_frames = staged;
+
+	memset(&stamp, 0, sizeof(stamp));
+	if (now != NULL) {
+		stamp = *now;
+	} else {
+		stamp.mFlags = kAudioTimeStampSampleTimeValid | kAudioTimeStampHostTimeValid;
+		stamp.mSampleTime = (Float64)queue->frames_played;
+		stamp.mHostTime = AudioGetCurrentHostTime();
+	}
+
+	/* The tap runs on the cycle's client-format audio, and what it emits is what the caller is handed; a tap that
+	 * pulls less than it was shown drops the rest, which is what a recording that falls behind does. */
+	{
+		const uint8_t *audio;
+		UInt32 frames;
+
+		if (queue->tap != NULL) {
+			audio = fn_tap_process(queue, queue->stage_frames, &stamp, &frames);
+		} else {
+			audio = queue->stage + (size_t)queue->stage_offset * frame_bytes;
+			frames = queue->stage_frames - queue->stage_offset;
+		}
+
+		queue->stage_frames = 0;
+		queue->stage_offset = 0;
+
+		while (frames > 0) {
+			AudioQueueBufferRef buffer = fn_pop_pending(queue);
+			UInt32 fit;
+			UInt32 take;
+
+			if (buffer == NULL) {
+				/* Nothing enqueued to record into: the audio is lost, exactly as it is on a device whose client
+				 * did not keep up. */
+				break;
+			}
+
+			fit = buffer->mAudioDataBytesCapacity / (UInt32)frame_bytes;
+			take = frames < fit ? frames : fit;
+			if (take == 0) {
+				fn_push_pending(queue, buffer);
+				break;
+			}
+
+			memcpy(buffer->mAudioData, audio, (size_t)take * frame_bytes);
+			buffer->mAudioDataByteSize = take * (UInt32)frame_bytes;
+			audio += (size_t)take * frame_bytes;
+			frames -= take;
+			queue->frames_played += take;
+			if (filled_count < AGORA_QUEUE_MAX_PENDING) {
+				filled[filled_count++] = buffer;
+			}
+		}
+	}
+
+	queue->last_time = stamp;
+
+	pthread_mutex_unlock(&queue->lock);
+
+	/* The caller's callback runs with the lock released, for the same reason the output callback does: it almost
+	 * always re-enqueues the buffer it was handed. */
+	for (i = 0; i < filled_count; i++) {
+		if (queue->input_callback != NULL) {
+			queue->input_callback(queue->client, queue, filled[i], &stamp, 0, NULL);
+		} else if (queue->input_block != NULL) {
+			AudioQueueBufferRef buffer = filled[i];
+
+			if (queue->queue != NULL) {
+				dispatch_async(queue->queue, ^{
+					queue->input_block(queue, buffer, &stamp, 0, NULL);
+				});
+			} else {
+				queue->input_block(queue, buffer, &stamp, 0, NULL);
+			}
+		}
+	}
+
+	return 0;
+}
+
+/* ------------------------------------------------------------------------------------------------
  * Creation.
  * ---------------------------------------------------------------------------------------------- */
 
-static OSStatus fn_queue_new(const AudioStreamBasicDescription *format, AudioQueueRef *out,
+static OSStatus fn_queue_new(const AudioStreamBasicDescription *format, bool input, AudioQueueRef *out,
                              AudioQueueOutputCallback callback, AudioQueueOutputCallbackBlock block,
+                             AudioQueueInputCallback input_callback,
+                             AudioQueueInputCallbackBlock input_block,
                              dispatch_queue_t queue, void *client)
 {
 	AudioQueueRef aq;
 	OSStatus status;
-	AudioObjectPropertyAddress default_device = { kAudioHardwarePropertyDefaultOutputDevice,
+	AudioObjectPropertyAddress default_device = { input ? kAudioHardwarePropertyDefaultInputDevice
+	                                                    : kAudioHardwarePropertyDefaultOutputDevice,
 	                                              kAudioObjectPropertyScopeGlobal,
 	                                              kAudioObjectPropertyElementMaster };
 	UInt32 size = sizeof(AudioDeviceID);
@@ -774,9 +996,20 @@ static OSStatus fn_queue_new(const AudioStreamBasicDescription *format, AudioQue
 		return kAudio_MemFullError;
 	}
 
+	/* A capture queue's converter writes into the queue's own stage, described as the client's format — which may be
+	 * planar, and a buffer list for that is longer than the structure declares. */
+	aq->chunk = fn_list_new(fn_client_planes(format));
+	if (aq->chunk == NULL) {
+		free(aq);
+		return kAudio_MemFullError;
+	}
+
 	aq->format = *format;
+	aq->input = input;
 	aq->callback = callback;
 	aq->block = block;
+	aq->input_callback = input_callback;
+	aq->input_block = input_block;
 	aq->queue = queue;
 	aq->client = client;
 	aq->volume = 1.0f;
@@ -791,10 +1024,10 @@ static OSStatus fn_queue_new(const AudioStreamBasicDescription *format, AudioQue
 		return kAudioQueueErr_InvalidDevice;
 	}
 
-	/* The device's format is the queue's destination format. It is asked for rather than assumed: a device
-	 * with one channel must not be handed a stereo buffer. */
+	/* The device's format is the queue's other end. It is asked for rather than assumed: a device with one
+	 * channel must not be handed a stereo buffer. */
 	{
-		UInt32 channels = fn_device_channels(aq->device);
+		UInt32 channels = fn_device_channels(aq->device, input);
 
 		memset(&aq->device_format, 0, sizeof(aq->device_format));
 		aq->device_format.mSampleRate = format->mSampleRate;
@@ -841,12 +1074,17 @@ static OSStatus fn_queue_new(const AudioStreamBasicDescription *format, AudioQue
 		aq->map_channels = true;
 	}
 
+	/* **THE CONVERTER FACES THE WAY THE AUDIO DOES.** An output queue converts the client's format into the
+	 * device's; a capture queue converts the device's into the client's. Either way the conversion happens on the
+	 * queue's own channel count — `convert_format`, which is the device's rate with the client's channels — because
+	 * `AudioConverterNew` refuses a channel-count change and the mapping above is where that belongs. */
 	if (aq->map_channels
 	    || aq->device_format.mSampleRate != format->mSampleRate
 	    || format->mBitsPerChannel != 32
 	    || (format->mFormatFlags & kAudioFormatFlagIsFloat) == 0
 	    || (format->mFormatFlags & kAudioFormatFlagIsNonInterleaved) != 0) {
-		status = AudioConverterNew(format, &aq->convert_format, &aq->converter);
+		status = input ? AudioConverterNew(&aq->convert_format, format, &aq->converter)
+		               : AudioConverterNew(format, &aq->convert_format, &aq->converter);
 		if (status != 0) {
 			pthread_mutex_destroy(&aq->lock);
 			free(aq);
@@ -867,7 +1105,7 @@ OSStatus AudioQueueNewOutput(const AudioStreamBasicDescription *inFormat, AudioQ
 	(void)inCallbackRunLoopMode;
 	(void)inFlags;
 
-	return fn_queue_new(inFormat, outAQ, inCallbackProc, NULL, NULL, inUserData);
+	return fn_queue_new(inFormat, false, outAQ, inCallbackProc, NULL, NULL, NULL, NULL, inUserData);
 }
 
 OSStatus AudioQueueNewOutputWithDispatchQueue(AudioQueueRef *outAQ,
@@ -877,24 +1115,19 @@ OSStatus AudioQueueNewOutputWithDispatchQueue(AudioQueueRef *outAQ,
 {
 	(void)inFlags;
 
-	return fn_queue_new(inFormat, outAQ, NULL, inCallbackProc, inCallbackRunLoop, NULL);
+	return fn_queue_new(inFormat, false, outAQ, NULL, inCallbackProc, NULL, NULL, inCallbackRunLoop,
+	                    NULL);
 }
 
 OSStatus AudioQueueNewInput(const AudioStreamBasicDescription *inFormat, AudioQueueInputCallback inCallbackProc,
                             void *inUserData, CFRunLoopRef inCallbackRunLoop,
                             CFStringRef inCallbackRunLoopMode, UInt32 inFlags, AudioQueueRef *outAQ)
 {
-	(void)inFormat;
-	(void)inCallbackProc;
-	(void)inUserData;
 	(void)inCallbackRunLoop;
 	(void)inCallbackRunLoopMode;
 	(void)inFlags;
-	(void)outAQ;
 
-	/* Recording needs an input stream opened and scheduled; the device layer has no input backend yet, and a
-	 * queue that accepted the call and recorded nothing would be the worst of the two answers. */
-	return kAudioQueueErr_InvalidDevice;
+	return fn_queue_new(inFormat, true, outAQ, NULL, NULL, inCallbackProc, NULL, NULL, inUserData);
 }
 
 OSStatus AudioQueueNewInputWithDispatchQueue(AudioQueueRef *outAQ,
@@ -902,13 +1135,9 @@ OSStatus AudioQueueNewInputWithDispatchQueue(AudioQueueRef *outAQ,
                                              dispatch_queue_t inCallbackRunLoop,
                                              AudioQueueInputCallbackBlock inCallbackProc)
 {
-	(void)outAQ;
-	(void)inFormat;
 	(void)inFlags;
-	(void)inCallbackRunLoop;
-	(void)inCallbackProc;
 
-	return kAudioQueueErr_InvalidDevice;
+	return fn_queue_new(inFormat, true, outAQ, NULL, NULL, NULL, inCallbackProc, inCallbackRunLoop, NULL);
 }
 
 /* ------------------------------------------------------------------------------------------------
@@ -1070,7 +1299,9 @@ OSStatus AudioQueueStart(AudioQueueRef inAQ, const AudioTimeStamp *inStartTime)
 
 	if (!inAQ->running) {
 		AudioDeviceIOProcID id = NULL;
-		OSStatus status = AudioDeviceCreateIOProcID(inAQ->device, fn_queue_render, inAQ, &id);
+		OSStatus status = AudioDeviceCreateIOProcID(inAQ->device,
+		                                            inAQ->input ? fn_queue_capture : fn_queue_render,
+		                                            inAQ, &id);
 
 		if (status == 0) {
 			status = AudioDeviceStart(inAQ->device, id);
@@ -1107,9 +1338,10 @@ OSStatus AudioQueueStop(AudioQueueRef inAQ, Boolean inImmediate)
 
 	pthread_mutex_unlock(&inAQ->lock);
 
-	if (!inImmediate) {
-		/* DRAIN: wait for the enqueued audio to finish. The io proc owns the queue's clock, so this waits on
-		 * its progress rather than on a timer. */
+	if (!inImmediate && !inAQ->input) {
+		/* DRAIN: wait for the enqueued audio to finish. The io proc owns the queue's clock, so this waits on its
+		 * progress rather than on a timer. A capture queue has nothing to play out — draining it would wait for
+		 * its *empty* buffers to be consumed, which is to say forever. */
 		UInt32 guard = 0;
 
 		while (guard++ < 2000) {
@@ -1137,8 +1369,8 @@ OSStatus AudioQueueStop(AudioQueueRef inAQ, Boolean inImmediate)
 	pthread_mutex_unlock(&inAQ->lock);
 
 	/* The io proc id is the proc pointer, which is how `AudioDeviceDestroyIOProcID` finds it. */
-	AudioDeviceStop(inAQ->device, fn_queue_render);
-	AudioDeviceDestroyIOProcID(inAQ->device, fn_queue_render);
+	AudioDeviceStop(inAQ->device, inAQ->input ? fn_queue_capture : fn_queue_render);
+	AudioDeviceDestroyIOProcID(inAQ->device, inAQ->input ? fn_queue_capture : fn_queue_render);
 
 	fn_notify(inAQ, kAudioQueueProperty_IsRunning);
 	return 0;
@@ -1227,6 +1459,7 @@ OSStatus AudioQueueDispose(AudioQueueRef inAQ, Boolean inImmediate)
 	free(inAQ->map_scratch);
 	free(inAQ->stage);
 	free(inAQ->tapped);
+	free(inAQ->chunk);
 
 	/* A tap is destroyed implicitly when its queue is, which is the only lifetime rule it has. */
 	if (inAQ->tap != NULL) {
@@ -1802,7 +2035,9 @@ OSStatus AudioQueueProcessingTapGetSourceAudio(AudioQueueProcessingTapRef inAQTa
 		flags |= kAudioQueueProcessingTap_StartOfStream;
 		tap->generation = queue->generation;
 	}
-	if (give == 0 || (queue->current == NULL && queue->pending_count == 0)) {
+	/* An output queue's source ends when nothing is left to play; a capture queue's ends when the device stops
+	 * feeding it, which is what `give == 0` says for both. */
+	if (give == 0 || (!queue->input && queue->current == NULL && queue->pending_count == 0)) {
 		flags |= kAudioQueueProcessingTap_EndOfStream;
 	}
 
@@ -1831,8 +2066,12 @@ OSStatus AudioQueueProcessingTapGetQueueTime(AudioQueueProcessingTapRef inAQTap,
 
 	queue = tap->queue;
 
-	/* Every queue here is an output queue — there is no capture backend in the device layer, so
-	 * `AudioQueueNewInput` refuses at creation and `kAudioQueueErr_InvalidTapType` has nothing to answer. */
+	/* "GetTapQueueTime can only be called on an output queue's tap": a recording has no queue time to report,
+	 * because nothing is waiting to be played. */
+	if (queue->input) {
+		return kAudioQueueErr_InvalidTapType;
+	}
+
 	rate = queue->device_format.mSampleRate > 0.0 ? queue->device_format.mSampleRate
 	                                              : queue->format.mSampleRate;
 	*outQueueSampleTime = rate > 0.0 ? (Float64)queue->frames_played / rate : 0.0;

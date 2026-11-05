@@ -213,9 +213,12 @@ const agora_driver * fn_agora_driver_sndio(void);
  * the `fn_` form with a name so a developer's shell cannot change what a test measured. */
 void fn_agora_audio_set_driver(const char *name);
 
-/* Called by a driver's data thread. Fills `mix` (interleaved float32, `frames` long) from every attached io
- * proc, applies the device's volume, and returns nothing — the driver plays it or drops it. */
-void fn_agora_device_render(AudioDeviceID id, float *mix, UInt32 frames);
+/* Called by a driver's data thread. `capture` is what the device heard during this cycle — interleaved float32,
+ * `frames` long and `channels` wide — or NULL for a device with no input; it is handed to every io proc as its
+ * `inInputData`, unchanged and read-only, because on a real device the input belongs to the cycle rather than to
+ * a client. `mix` (interleaved float32, `frames` long) is filled from every attached io proc and the device's
+ * volume is applied to it, and the driver plays it or drops it. */
+void fn_agora_device_render(AudioDeviceID id, const float *capture, float *mix, UInt32 frames);
 
 /* Test hooks, not part of the API and never installed: what the mixer produced, and how many frames it has
  * rendered, so a suite can assert that two io procs summed rather than that they were both called. */
