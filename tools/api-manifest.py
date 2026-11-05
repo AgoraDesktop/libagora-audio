@@ -10,12 +10,18 @@
 
 The manifest is the FACTS the headers in this repository are written from and checked against:
 record sizes, alignments and field offsets, the value of every enumeration constant, every
-typedef, and the qualified type of every function. It is committed. The SDK is not — an SDK is
-Apple's text, a manifest is measurements.
+typedef, and the qualified type of every function — plus, for the Objective-C doors, every class,
+its superclass and protocols, and every method and property it declares. It is committed. The SDK
+is not — an SDK is Apple's text, a manifest is measurements.
 
 WHY THIS RUNS ON LINUX: clang parses Apple's headers given three shims (`tools/refshim/`) and a
 copy of the header tree with Darwin's nullability keywords spelled the way clang spells them
 everywhere else. That copy is made in a scratch directory; the SDK is only ever read.
+
+ONE LANGUAGE, TWO READINGS: the unit is compiled as Objective-C even when it only includes C
+headers, because a C header parses identically that way and `AUParameters.h` cannot be read any
+other way. `-fobjc-runtime=macosx-10.12` is what makes `__OBJC2__` true, which is the `#if` the
+AUv3 headers hide inside; nothing here is ever generated or run.
 
 TWO PASSES, BECAUSE CLANG'S LAYOUT DUMP IS DEMAND-DRIVEN: a record's layout is dumped when
 something needs it, so a translation unit that only includes headers dumps nothing. The first pass
@@ -34,6 +40,10 @@ import tempfile
 
 CLANG = os.environ.get("CLANG", "/usr/bin/clang-19")
 FRAMEWORKS = ("CoreAudio", "AudioToolbox", "AudioUnit", "CoreAudioTypes", "CoreMIDI")
+
+# The Objective-C reading. `-fobjc-runtime=macosx-10.12` is a parse-time fact only: it defines
+# `__OBJC2__`, which is the guard both AUv3 headers sit inside.
+OBJC_FLAGS = ("-x", "objective-c", "-fobjc-runtime=macosx-10.12", "-fblocks")
 
 NULLABILITY = (
     (re.compile(r"\b__nonnull\b"), "_Nonnull"),
@@ -148,6 +158,72 @@ def constant_value(node):
     return "0"
 
 
+PROPERTY_ATTRIBUTES = ("readonly", "readwrite", "copy", "retain", "assign", "weak",
+                       "unsafe_unretained", "nonatomic", "atomic", "nullability")
+
+
+def objc_facts(tree, prefix):
+    """Classes, protocols, methods and properties, from declarations inside the staged SDK.
+
+    A property's accessors are `ObjCMethodDecl`s too, marked `isImplicit`; recording both would make
+    the record say the same thing twice and would let a header drop `readonly` without the record
+    noticing, so the accessors are the ones skipped and the property carries its attributes.
+
+    The enclosing class is carried down the recursion because clang's JSON nests a method under its
+    interface rather than naming the class on the method. A category is reported under the class it
+    extends, which is where a client writes the selectors.
+    """
+    classes, protocols, methods, properties = {}, {}, {}, {}
+    categories = {}
+
+    # clang's JSON omits `file` whenever a node repeats the PREVIOUS node's file, so the file a
+    # declaration came from is only knowable by carrying it across the whole dump in source order —
+    # `walk` does exactly that, and its answer is indexed here by node so the recursion below can
+    # descend with the enclosing class and still know where each node really lives.
+    files = {id(node): path for path, node in walk(tree, None)}
+
+    def descend(node, klass):
+        path = files.get(id(node))
+        here = path is not None and path.startswith(prefix)
+        kind = node.get("kind")
+
+        if here and kind in ("ObjCInterfaceDecl", "ObjCCategoryDecl"):
+            if kind == "ObjCCategoryDecl":
+                klass = (node.get("interface") or {}).get("name") or klass
+                if klass:
+                    categories.setdefault(klass, []).append(node.get("name") or "")
+            else:
+                name = node.get("name")
+                # `@class Foo;` parses as an interface whose superclass is an empty reference and
+                # which has no body: it declares nothing, so it is a name a signature may use rather
+                # than part of the surface.
+                if name and (node.get("super") or {}).get("name"):
+                    names = [entry.get("name") for entry in node.get("protocols") or []]
+                    classes[name] = ((node.get("super") or {}).get("name"),
+                                     [entry for entry in names if entry])
+                    klass = name
+        elif here and kind == "ObjCProtocolDecl" and node.get("name"):
+            protocols[node["name"]] = True
+
+        if here and klass is not None:
+            if kind == "ObjCMethodDecl" and not node.get("isImplicit") and node.get("name"):
+                parameters = [child.get("type", {}).get("qualType", "")
+                              for child in node.get("inner") or []
+                              if child.get("kind") == "ParmVarDecl"]
+                key = (klass, "+" if not node.get("instance") else "-", node["name"])
+                methods[key] = (node.get("returnType", {}).get("qualType", ""), parameters)
+            elif kind == "ObjCPropertyDecl" and node.get("name"):
+                attributes = [name for name in PROPERTY_ATTRIBUTES if node.get(name)]
+                properties[(klass, node["name"])] = (node.get("type", {}).get("qualType", ""),
+                                                     sorted(attributes))
+
+        for child in node.get("inner") or []:
+            descend(child, klass)
+
+    descend(tree, None)
+    return classes, protocols, categories, methods, properties
+
+
 def ast_facts(tree, prefix):
     constants, typedefs, functions, records_seen = {}, {}, {}, []
     for path, node in walk(tree, None):
@@ -185,9 +261,10 @@ def main():
             for header in args.headers:
                 handle.write("#include <%s>\n" % header)
 
-        common = [CLANG, "-fsyntax-only", "-fblocks", "-std=gnu11", "-I", args.refshim, "-I", stage_dir]
+        common = [CLANG, "-fsyntax-only"] + list(OBJC_FLAGS) + ["-std=gnu11", "-I", args.refshim, "-I", stage_dir]
         tree = json.loads(run(common + ["-Xclang", "-ast-dump=json", unit]).stdout)
         constants, typedefs, functions, seen = ast_facts(tree, prefix)
+        classes, protocols, categories, methods, properties = objc_facts(tree, prefix)
 
         # Pass two: name one variable of every record the headers declare, so clang lays them out.
         layout_unit = os.path.join(work, "layout.c")
@@ -230,6 +307,27 @@ def main():
         for name in sorted(functions):
             lines.append("[function] %s = %s" % (name, functions[name]))
         lines.append("")
+        for name in sorted(classes):
+            superclass, conforms = classes[name]
+            lines.append("[objc-class] %s : %s%s" % (
+                name, superclass or "",
+                (" <" + ", ".join(conforms) + ">") if conforms else ""))
+        for name in sorted(protocols):
+            lines.append("[objc-protocol] %s" % name)
+        for name in sorted(categories):
+            for category in sorted(set(categories[name])):
+                lines.append("[objc-category] %s (%s)" % (name, category))
+        for key in sorted(properties):
+            klass, name = key
+            qual_type, attributes = properties[key]
+            lines.append("[objc-property] %s %s = %s %s" % (
+                klass, name, qual_type, ",".join(attributes)))
+        for key in sorted(methods):
+            klass, sign, selector = key
+            qual_type, parameters = methods[key]
+            lines.append("[objc-method] %s %s%s = %s (%s)" % (
+                klass, sign, selector, qual_type, ", ".join(parameters)))
+        lines.append("")
 
         text = "\n".join(lines)
         if args.out == "-":
@@ -238,8 +336,10 @@ def main():
             os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
             with open(args.out, "w") as handle:
                 handle.write(text)
-            sys.stderr.write("api-manifest: %d records, %d constants, %d typedefs, %d functions -> %s\n" % (
-                len(found), len(constants), len(typedefs), len(functions), args.out))
+            sys.stderr.write("api-manifest: %d records, %d constants, %d typedefs, %d functions, "
+                             "%d objc classes, %d objc methods -> %s\n" % (
+                                 len(found), len(constants), len(typedefs), len(functions),
+                                 len(classes), len(methods), args.out))
     finally:
         shutil.rmtree(work, ignore_errors=True)
 

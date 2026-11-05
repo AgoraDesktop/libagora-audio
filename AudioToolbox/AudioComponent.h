@@ -52,6 +52,8 @@ typedef UInt32 AudioUnitScope;
 typedef UInt32 AudioUnitElement;
 typedef UInt32 AudioUnitParameterID;
 typedef Float32 AudioUnitParameterValue;
+typedef UInt32 AudioUnitParameterUnit;
+typedef UInt32 AudioUnitParameterOptions;
 typedef UInt32 AudioUnitRenderActionFlags;
 
 CF_ENUM(UInt32)

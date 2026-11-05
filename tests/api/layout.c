@@ -131,6 +131,19 @@ AGORA_FIELD(AudioClassDescription, mType, 0);
 AGORA_FIELD(AudioClassDescription, mSubType, 4);
 AGORA_FIELD(AudioClassDescription, mManufacturer, 8);
 
+/* --- the parameter description an AUv3 tree is built from ------------------ */
+AGORA_SIZE(AudioUnitParameterInfo, 104);
+AGORA_ALIGN(AudioUnitParameterInfo, 8);
+AGORA_FIELD(AudioUnitParameterInfo, name, 0);
+AGORA_FIELD(AudioUnitParameterInfo, unitName, 56);
+AGORA_FIELD(AudioUnitParameterInfo, clumpID, 64);
+AGORA_FIELD(AudioUnitParameterInfo, cfNameString, 72);
+AGORA_FIELD(AudioUnitParameterInfo, unit, 80);
+AGORA_FIELD(AudioUnitParameterInfo, minValue, 84);
+AGORA_FIELD(AudioUnitParameterInfo, maxValue, 88);
+AGORA_FIELD(AudioUnitParameterInfo, defaultValue, 92);
+AGORA_FIELD(AudioUnitParameterInfo, flags, 96);
+
 int main(void);
 int main(void)
 {

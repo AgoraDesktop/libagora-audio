@@ -23,8 +23,9 @@
 
 cmake_minimum_required(VERSION 3.24)
 
-# C now; OBJC is added with AUv3 (10.12's `AUAudioUnit` imports Foundation), which is phase 5.
-project(AgoraAudio LANGUAGES C)
+# C and Objective-C: `AUAudioUnit` and `AUParameterTree` are `NSObject`s (10.12's AUv3 headers import
+# Foundation), which is also why this component sits above libagora-base in `release/components.conf`.
+project(AgoraAudio LANGUAGES C OBJC)
 
 # **EVERY LIBRARY FINDS ITS NEIGHBOURS, AND THE INSTALLED BUNDLE NEEDS NO ENVIRONMENT.** A `DT_RUNPATH`
 # is not inherited by a dependency's own dependencies, so `$ORIGIN` is what makes a relocatable install
@@ -40,6 +41,8 @@ endif()
 
 find_package(CoreFoundation CONFIG REQUIRED)
 find_package(dispatch CONFIG REQUIRED)
+find_package(Foundation CONFIG REQUIRED)
+find_package(libobjc CONFIG REQUIRED)          # -> objc, the runtime Foundation's objects live in
 
 # **A BACKEND IS COMPILED WHEN ITS SYSTEM LIBRARY IS THERE, AND THE BUILD SAYS WHICH.** ALSA is the second
 # backend; PipeWire and sndio arrive with their phases. `-DAGORA_AUDIO_WITH_ALSA=OFF` builds without it and
@@ -83,7 +86,9 @@ add_library(Audio SHARED
     "${CMAKE_CURRENT_SOURCE_DIR}/AudioServices.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/AudioUnit.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/AudioGraph.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/ExtAudioFile.c")
+    "${CMAKE_CURRENT_SOURCE_DIR}/ExtAudioFile.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/AUParameters.m"
+    "${CMAKE_CURRENT_SOURCE_DIR}/AUAudioUnit.m")
 
 set_target_properties(Audio PROPERTIES OUTPUT_NAME agora-audio)
 
@@ -103,13 +108,17 @@ target_include_directories(Audio
         "$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>")
 
 # Core Foundation is PUBLIC: `OSStatus`, `SInt32` and `Boolean` come from it, and a client of these
-# headers has to have them. Threads is PRIVATE and not used yet — the HAL owns its threads in phase 2.
+# headers has to have them. Foundation is PUBLIC for the same reason on the Objective-C doors: a client that
+# names `AUAudioUnit` needs `NSObject`, and the runtime flag Foundation exports is what makes its own build
+# resolve our classes. Threads is PRIVATE and not used yet — the HAL owns its threads in phase 2.
 target_link_libraries(Audio
     PUBLIC
         CoreFoundation::CoreFoundation
+        Foundation::Foundation
     PRIVATE
         Threads::Threads
         dispatch
+        objc
         m)
 
 # **THE TESTS ARE A DEVELOPMENT ARTEFACT, AND A RELEASE DOES NOT BUILD THEM.** `-DBUILD_TESTING=OFF`,

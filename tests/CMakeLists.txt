@@ -25,6 +25,14 @@ target_link_libraries(api_cxx PRIVATE Audio)
 set_target_properties(api_cxx PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED YES)
 add_test(NAME api-cxx COMMAND api_cxx)
 
+# The Objective-C face has its own gate, because the C one is `_Static_assert` over numbers and this one is
+# type compatibility over message sends. `-Werror=objc-method-access` is what makes a removed declaration a
+# build failure rather than a warning nobody reads.
+add_executable(api_objc api/objc.m)
+target_link_libraries(api_objc PRIVATE Audio objc)
+target_compile_options(api_objc PRIVATE -Werror=objc-method-access -Werror=incompatible-pointer-types)
+add_test(NAME api-objc COMMAND api_objc)
+
 add_executable(api_prototypes api/prototypes.c)
 target_link_libraries(api_prototypes PRIVATE Audio)
 add_test(NAME api-prototypes COMMAND api_prototypes)
@@ -66,6 +74,13 @@ add_executable(hosttime hosttime.c)
 target_link_libraries(hosttime PRIVATE Audio)
 add_test(NAME hosttime COMMAND hosttime)
 
+# The Objective-C door: the same units, measured through their object faces and against the C doors they
+# describe. Its assertions come in pairs for that reason.
+add_executable(auv3 auv3.m)
+target_link_libraries(auv3 PRIVATE Audio m dispatch objc)
+target_include_directories(auv3 PRIVATE "${CMAKE_SOURCE_DIR}")
+add_test(NAME auv3 COMMAND auv3)
+
 # The suites load the library from the build tree, not from an installed prefix: the runpath rules
 # that make an installed bundle relocatable do not apply to a test binary, and a stale copy in the
 # prefix is exactly what makes a test measure the wrong code.
@@ -74,7 +89,7 @@ set(_agora_runtime_dirs
     "$<TARGET_FILE_DIR:CoreFoundation::CoreFoundation>")
 list(REMOVE_DUPLICATES _agora_runtime_dirs)
 string(REPLACE ";" ":" _agora_ld_path "${_agora_runtime_dirs}")
-set(_agora_audio_tests api-layout api-macros api-cxx api-prototypes format converter file hal queue unit hosttime)
+set(_agora_audio_tests api-layout api-macros api-cxx api-objc api-prototypes format converter file hal queue unit hosttime auv3)
 if(ALSA_FOUND)
     list(APPEND _agora_audio_tests hal-alsa)
 endif()

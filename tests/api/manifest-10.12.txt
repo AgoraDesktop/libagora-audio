@@ -5,8 +5,8 @@
 # record size, alignment and field offsets, enumeration values, typedefs, prototypes.
 # The SDK itself is never committed — only measurements of it.
 #
-# headers: CoreAudio/CoreAudioTypes.h CoreAudio/HostTime.h CoreAudio/AudioHardwareBase.h CoreAudio/AudioHardware.h AudioToolbox/AudioFormat.h AudioToolbox/AudioConverter.h AudioToolbox/AudioFile.h AudioToolbox/AudioFileStream.h AudioToolbox/ExtendedAudioFile.h AudioToolbox/AudioQueue.h AudioToolbox/AudioServices.h AudioToolbox/AudioComponent.h AudioToolbox/AudioUnit.h AudioToolbox/AudioOutputUnit.h AudioToolbox/AUGraph.h
-# framework headers staged: 38
+# headers: CoreAudio/CoreAudioTypes.h CoreAudio/HostTime.h CoreAudio/AudioHardwareBase.h CoreAudio/AudioHardware.h AudioToolbox/AudioFormat.h AudioToolbox/AudioConverter.h AudioToolbox/AudioFile.h AudioToolbox/AudioFileStream.h AudioToolbox/ExtendedAudioFile.h AudioToolbox/AudioQueue.h AudioToolbox/AudioServices.h AudioToolbox/AudioComponent.h AudioToolbox/AudioUnit.h AudioToolbox/AudioOutputUnit.h AudioToolbox/AUGraph.h AudioToolbox/AudioUnitProperties.h AudioToolbox/AUParameters.h AudioToolbox/AUAudioUnit.h
+# framework headers staged: 52
 
 [record] AUChannelInfo
   sizeof 4
@@ -24,7 +24,7 @@
   sizeof 12
   align 4
   field 0 inNumberOfPairs UInt32
-  field 4 pairs struct (unnamed struct at /tmp/agora-api-lfvk0ryw/stage/AudioToolbox/AudioUnitProperties.h:1943:2)[1]
+  field 4 pairs struct (unnamed struct at /tmp/agora-api-1y68g2_n/stage/AudioToolbox/AudioUnitProperties.h:1943:2)[1]
 
 [record] AUHostIdentifier
   sizeof 16
@@ -48,6 +48,17 @@
   field 0 inputToOutputCallback AUInputSamplesInOutputCallback _Nonnull
   field 8 userData void * _Nullable
 
+[record] AUMIDIEvent
+  sizeof 24
+  align 4
+  field 0 next union AURenderEvent * _Nullable
+  field 8 eventSampleTime AUEventSampleTime
+  field 16 eventType AURenderEventType
+  field 17 reserved uint8_t
+  field 18 length uint16_t
+  field 20 cable uint8_t
+  field 21 data uint8_t[3]
+
 [record] AUMIDIOutputCallbackStruct
   sizeof 16
   align 8
@@ -58,7 +69,7 @@
   sizeof 32
   align 8
   field 0 nodeInteractionType UInt32
-  field 8 nodeInteraction union AUNodeInteraction::(unnamed at /tmp/agora-api-lfvk0ryw/stage/AudioToolbox/AUGraph.h:313:2)
+  field 8 nodeInteraction union AUNodeInteraction::(unnamed at /tmp/agora-api-1y68g2_n/stage/AudioToolbox/AUGraph.h:313:2)
   field 8 connection struct AudioUnitNodeConnection
   field 8 sourceNode AUNode
   field 12 sourceOutputNumber UInt32
@@ -88,6 +99,26 @@
   field 2 minorAndBugRev UInt8
   field 3 majorRev UInt8
 
+[record] AUParameterAutomationEvent
+  sizeof 32
+  align 8
+  field 0 hostTime uint64_t
+  field 8 address AUParameterAddress
+  field 16 value AUValue
+  field 20 eventType AUParameterAutomationEventType
+  field 24 reserved uint64_t
+
+[record] AUParameterEvent
+  sizeof 36
+  align 4
+  field 0 next union AURenderEvent * _Nullable
+  field 8 eventSampleTime AUEventSampleTime
+  field 16 eventType AURenderEventType
+  field 17 reserved uint8_t[3]
+  field 20 rampDurationSampleFrames AUAudioFrameCount
+  field 24 parameterAddress AUParameterAddress
+  field 32 value AUValue
+
 [record] AUParameterMIDIMapping
   sizeof 32
   align 4
@@ -109,11 +140,51 @@
   field 0 presetNumber SInt32
   field 8 presetName CFStringRef _Nullable
 
+[record] AURecordedParameterEvent
+  sizeof 24
+  align 8
+  field 0 hostTime uint64_t
+  field 8 address AUParameterAddress
+  field 16 value AUValue
+
 [record] AURenderCallbackStruct
   sizeof 16
   align 8
   field 0 inputProc AURenderCallback _Nullable
   field 8 inputProcRefCon void * _Nullable
+
+[record] AURenderEvent
+  sizeof 36
+  align 4
+  field 0 head struct AURenderEventHeader
+  field 0 next union AURenderEvent * _Nullable
+  field 8 eventSampleTime AUEventSampleTime
+  field 16 eventType AURenderEventType
+  field 17 reserved uint8_t
+  field 0 parameter struct AUParameterEvent
+  field 0 next union AURenderEvent * _Nullable
+  field 8 eventSampleTime AUEventSampleTime
+  field 16 eventType AURenderEventType
+  field 17 reserved uint8_t[3]
+  field 20 rampDurationSampleFrames AUAudioFrameCount
+  field 24 parameterAddress AUParameterAddress
+  field 32 value AUValue
+  field 0 MIDI struct AUMIDIEvent
+  field 0 next union AURenderEvent * _Nullable
+  field 8 eventSampleTime AUEventSampleTime
+  field 16 eventType AURenderEventType
+  field 17 reserved uint8_t
+  field 18 length uint16_t
+  field 20 cable uint8_t
+  field 21 data uint8_t[3]
+
+[record] AURenderEventHeader
+  sizeof 20
+  align 4
+  field 0 next union AURenderEvent * _Nullable
+  field 8 eventSampleTime AUEventSampleTime
+  field 16 eventType AURenderEventType
+  field 17 reserved uint8_t
 
 [record] AUSamplerBankPresetData
   sizeof 16
@@ -516,13 +587,13 @@
   field 4 element AudioUnitElement
   field 8 parameter AudioUnitParameterID
   field 12 eventType AUParameterEventType
-  field 16 eventValues union AudioUnitParameterEvent::(unnamed at /tmp/agora-api-lfvk0ryw/stage/AudioToolbox/AUComponent.h:795:2)
-  field 16 ramp struct AudioUnitParameterEvent::(unnamed at /tmp/agora-api-lfvk0ryw/stage/AudioToolbox/AUComponent.h:797:3)
+  field 16 eventValues union AudioUnitParameterEvent::(unnamed at /tmp/agora-api-1y68g2_n/stage/AudioToolbox/AUComponent.h:795:2)
+  field 16 ramp struct AudioUnitParameterEvent::(unnamed at /tmp/agora-api-1y68g2_n/stage/AudioToolbox/AUComponent.h:797:3)
   field 16 startBufferOffset SInt32
   field 20 durationInFrames UInt32
   field 24 startValue AudioUnitParameterValue
   field 28 endValue AudioUnitParameterValue
-  field 16 immediate struct AudioUnitParameterEvent::(unnamed at /tmp/agora-api-lfvk0ryw/stage/AudioToolbox/AUComponent.h:805:3)
+  field 16 immediate struct AudioUnitParameterEvent::(unnamed at /tmp/agora-api-1y68g2_n/stage/AudioToolbox/AUComponent.h:805:3)
   field 16 bufferOffset UInt32
   field 20 value AudioUnitParameterValue
 
@@ -768,6 +839,20 @@
   field 8 overflow_arg_area void *
   field 16 reg_save_area void *
 
+[constant] AUAudioUnitBusTypeInput = 1
+[constant] AUAudioUnitBusTypeOutput = 2
+[constant] AUEventSampleTimeImmediate = -4294967296
+[constant] AUHostTransportStateChanged = 1
+[constant] AUHostTransportStateCycling = 8
+[constant] AUHostTransportStateMoving = 2
+[constant] AUHostTransportStateRecording = 4
+[constant] AUParameterAutomationEventTypeRelease = 2
+[constant] AUParameterAutomationEventTypeTouch = 1
+[constant] AUParameterAutomationEventTypeValue = 0
+[constant] AURenderEventMIDI = 8
+[constant] AURenderEventMIDISysEx = 9
+[constant] AURenderEventParameter = 1
+[constant] AURenderEventParameterRamp = 2
 [constant] k3DMixerAttenuationCurve_Exponential = 1
 [constant] k3DMixerAttenuationCurve_Inverse = 2
 [constant] k3DMixerAttenuationCurve_Linear = 3
@@ -2610,14 +2695,30 @@
 
 [typedef] AU3DMixerAttenuationCurve = UInt32
 [typedef] AU3DMixerRenderingFlags = UInt32
+[typedef] AUAudioChannelCount = uint32_t
+[typedef] AUAudioFrameCount = uint32_t
+[typedef] AUAudioUnitBusType = NSInteger
+[typedef] AUAudioUnitStatus = OSStatus
 [typedef] AUChannelInfo = struct AUChannelInfo
 [typedef] AUDependentParameter = struct AUDependentParameter
 [typedef] AUDistanceAttenuationData = struct AUDistanceAttenuationData
+[typedef] AUEventSampleTime = int64_t
 [typedef] AUGraph = struct OpaqueAUGraph *
 [typedef] AUHostIdentifier = struct AUHostIdentifier
+[typedef] AUHostMusicalContextBlock = BOOL (^)(double * _Nullable, double * _Nullable, NSInteger * _Nullable, double * _Nullable, NSInteger * _Nullable, double * _Nullable)
+[typedef] AUHostTransportStateBlock = BOOL (^)(AUHostTransportStateFlags * _Nullable, double * _Nullable, double * _Nullable, double * _Nullable)
+[typedef] AUHostTransportStateFlags = NSUInteger
 [typedef] AUHostVersionIdentifier = struct AUHostVersionIdentifier
+[typedef] AUImplementorDisplayNameWithLengthCallback = NSString * _Nonnull (^)(AUParameterNode * _Nonnull, NSInteger)
+[typedef] AUImplementorStringFromValueCallback = NSString * _Nonnull (^)(AUParameter * _Nonnull, const AUValue * _Nullable)
+[typedef] AUImplementorValueFromStringCallback = AUValue (^)(AUParameter * _Nonnull, NSString * _Nonnull)
+[typedef] AUImplementorValueObserver = void (^)(AUParameter * _Nonnull, AUValue)
+[typedef] AUImplementorValueProvider = AUValue (^)(AUParameter * _Nonnull)
+[typedef] AUInputHandler = void (^)(AudioUnitRenderActionFlags * _Nonnull, const AudioTimeStamp * _Nonnull, AUAudioFrameCount, NSInteger)
 [typedef] AUInputSamplesInOutputCallback = void (*)(void * _Nonnull, const AudioTimeStamp * _Nonnull, Float64, Float64)
 [typedef] AUInputSamplesInOutputCallbackStruct = struct AUInputSamplesInOutputCallbackStruct
+[typedef] AUInternalRenderBlock = AUAudioUnitStatus (^)(AudioUnitRenderActionFlags * _Nonnull, const AudioTimeStamp * _Nonnull, AUAudioFrameCount, NSInteger, AudioBufferList * _Nonnull, const AURenderEvent * _Nullable, AURenderPullInputBlock _Nullable)
+[typedef] AUMIDIEvent = struct AUMIDIEvent
 [typedef] AUMIDIOutputCallback = OSStatus (*)(void * _Nullable, const AudioTimeStamp * _Nonnull, UInt32, const struct MIDIPacketList * _Nonnull)
 [typedef] AUMIDIOutputCallbackStruct = struct AUMIDIOutputCallbackStruct
 [typedef] AUNode = SInt32
@@ -2625,19 +2726,37 @@
 [typedef] AUNodeInteraction = struct AUNodeInteraction
 [typedef] AUNodeRenderCallback = struct AUNodeRenderCallback
 [typedef] AUNumVersion = struct AUNumVersion
+[typedef] AUParameterAddress = uint64_t
+[typedef] AUParameterAutomationEvent = struct AUParameterAutomationEvent
+[typedef] AUParameterAutomationEventType = uint32_t
+[typedef] AUParameterAutomationObserver = void (^)(NSInteger, const AUParameterAutomationEvent * _Nonnull)
+[typedef] AUParameterEvent = struct AUParameterEvent
 [typedef] AUParameterEventType = UInt32
 [typedef] AUParameterMIDIMapping = struct AUParameterMIDIMapping
 [typedef] AUParameterMIDIMappingFlags = UInt32
+[typedef] AUParameterObserver = void (^)(AUParameterAddress, AUValue)
+[typedef] AUParameterObserverToken = void *
+[typedef] AUParameterRecordingObserver = void (^)(NSInteger, const AURecordedParameterEvent * _Nonnull)
 [typedef] AUPreset = struct AUPreset
+[typedef] AURecordedParameterEvent = struct AURecordedParameterEvent
+[typedef] AURenderBlock = AUAudioUnitStatus (^)(AudioUnitRenderActionFlags * _Nonnull, const AudioTimeStamp * _Nonnull, AUAudioFrameCount, NSInteger, AudioBufferList * _Nonnull, AURenderPullInputBlock _Nullable)
 [typedef] AURenderCallback = OSStatus (*)(void * _Nonnull, AudioUnitRenderActionFlags * _Nonnull, const AudioTimeStamp * _Nonnull, UInt32, UInt32, AudioBufferList * _Nullable)
 [typedef] AURenderCallbackStruct = struct AURenderCallbackStruct
+[typedef] AURenderEvent = union AURenderEvent
+[typedef] AURenderEventHeader = struct AURenderEventHeader
+[typedef] AURenderEventType = uint8_t
+[typedef] AURenderObserver = void (^)(AudioUnitRenderActionFlags, const AudioTimeStamp * _Nonnull, AUAudioFrameCount, NSInteger)
+[typedef] AURenderPullInputBlock = AUAudioUnitStatus (^)(AudioUnitRenderActionFlags * _Nonnull, const AudioTimeStamp * _Nonnull, AUAudioFrameCount, NSInteger, AudioBufferList * _Nonnull)
 [typedef] AUReverbRoomType = UInt32
 [typedef] AUSamplerBankPresetData = struct AUSamplerBankPresetData
 [typedef] AUSamplerInstrumentData = struct AUSamplerInstrumentData
+[typedef] AUScheduleMIDIEventBlock = void (^)(AUEventSampleTime, uint8_t, NSInteger, const uint8_t * _Nonnull)
+[typedef] AUScheduleParameterBlock = void (^)(AUEventSampleTime, AUAudioFrameCount, AUParameterAddress, AUValue)
 [typedef] AUScheduledAudioSliceFlags = UInt32
 [typedef] AUSpatialMixerAttenuationCurve = UInt32
 [typedef] AUSpatialMixerRenderingFlags = UInt32
 [typedef] AUSpatializationAlgorithm = UInt32
+[typedef] AUValue = float
 [typedef] AudioBalanceFade = struct AudioBalanceFade
 [typedef] AudioBalanceFadeType = UInt32
 [typedef] AudioBuffer = struct AudioBuffer
@@ -2895,6 +3014,7 @@
 [function] AudioComponentCount = UInt32 (const AudioComponentDescription * _Nonnull)
 [function] AudioComponentFindNext = AudioComponent  _Nullable (AudioComponent _Nullable, const AudioComponentDescription * _Nonnull)
 [function] AudioComponentGetDescription = OSStatus (AudioComponent _Nonnull, AudioComponentDescription * _Nonnull)
+[function] AudioComponentGetIcon = NSImage * _Nullable (AudioComponent _Nonnull)
 [function] AudioComponentGetVersion = OSStatus (AudioComponent _Nonnull, UInt32 * _Nonnull)
 [function] AudioComponentInstanceCanDo = Boolean (AudioComponentInstance _Nonnull, SInt16)
 [function] AudioComponentInstanceDispose = OSStatus (AudioComponentInstance _Nonnull)
@@ -3087,3 +3207,139 @@
 [function] MusicDeviceStopNote = OSStatus (MusicDeviceComponent _Nonnull, MusicDeviceGroupID, NoteInstanceID, UInt32)
 [function] MusicDeviceSysEx = OSStatus (MusicDeviceComponent _Nonnull, const UInt8 * _Nonnull, UInt32)
 [function] NewAUGraph = OSStatus (AUGraph  _Nullable * _Nonnull)
+
+[objc-class] AUAudioUnit : NSObject
+[objc-class] AUAudioUnitBus : NSObject
+[objc-class] AUAudioUnitBusArray : NSObject <NSFastEnumeration>
+[objc-class] AUAudioUnitPreset : NSObject <NSSecureCoding>
+[objc-class] AUAudioUnitV2Bridge : AUAudioUnit
+[objc-class] AUParameter : AUParameterNode <NSSecureCoding>
+[objc-class] AUParameterGroup : AUParameterNode <NSSecureCoding>
+[objc-class] AUParameterNode : NSObject
+[objc-class] AUParameterTree : AUParameterGroup <NSSecureCoding>
+[objc-protocol] AUAudioUnitFactory
+[objc-category] AUAudioUnit (AUAudioInputOutputUnit)
+[objc-category] AUAudioUnit (AUAudioUnitImplementation)
+[objc-category] AUAudioUnitBus (AUAudioUnitImplementation)
+[objc-category] AUAudioUnitBusArray (AUAudioUnitBusImplementation)
+[objc-category] AUParameterNode (AUParameterNodeImplementation)
+[objc-category] AUParameterTree (Factory)
+[objc-property] AUAudioUnit allParameterValues = BOOL nonatomic,readonly
+[objc-property] AUAudioUnit audioUnitName = NSString * _Nullable copy,nonatomic,nullability,readonly
+[objc-property] AUAudioUnit canPerformInput = BOOL nonatomic,readonly
+[objc-property] AUAudioUnit canPerformOutput = BOOL nonatomic,readonly
+[objc-property] AUAudioUnit canProcessInPlace = BOOL nonatomic,readonly
+[objc-property] AUAudioUnit channelCapabilities = NSArray<NSNumber *> * _Nullable copy,nonatomic,nullability,readonly
+[objc-property] AUAudioUnit channelMap = NSArray<NSNumber *> * _Nullable copy,nonatomic,nullability,readwrite
+[objc-property] AUAudioUnit component = AudioComponent _Nonnull nonatomic,readonly
+[objc-property] AUAudioUnit componentDescription = AudioComponentDescription nonatomic,readonly
+[objc-property] AUAudioUnit componentName = NSString * _Nullable copy,nonatomic,nullability,readonly
+[objc-property] AUAudioUnit componentVersion = uint32_t nonatomic,readonly
+[objc-property] AUAudioUnit contextName = NSString * _Nullable copy,nonatomic,nullability,readwrite
+[objc-property] AUAudioUnit currentPreset = AUAudioUnitPreset * _Nullable nonatomic,nullability,readwrite,retain
+[objc-property] AUAudioUnit deviceID = AudioObjectID nonatomic,readonly
+[objc-property] AUAudioUnit factoryPresets = NSArray<AUAudioUnitPreset *> * _Nullable copy,nonatomic,nullability,readonly
+[objc-property] AUAudioUnit fullState = NSDictionary<NSString *,id> * _Nullable copy,nonatomic,nullability,readwrite
+[objc-property] AUAudioUnit fullStateForDocument = NSDictionary<NSString *,id> * _Nullable copy,nonatomic,nullability,readwrite
+[objc-property] AUAudioUnit inputBusses = AUAudioUnitBusArray * _Nonnull nonatomic,readonly
+[objc-property] AUAudioUnit inputEnabled = BOOL assign,nonatomic,readwrite,unsafe_unretained
+[objc-property] AUAudioUnit inputHandler = AUInputHandler _Nullable copy,nonatomic,nullability,readwrite
+[objc-property] AUAudioUnit internalRenderBlock = AUInternalRenderBlock _Nonnull nonatomic,readonly
+[objc-property] AUAudioUnit latency = NSTimeInterval nonatomic,readonly
+[objc-property] AUAudioUnit manufacturerName = NSString * _Nullable copy,nonatomic,nullability,readonly
+[objc-property] AUAudioUnit maximumFramesToRender = AUAudioFrameCount assign,nonatomic,readwrite,unsafe_unretained
+[objc-property] AUAudioUnit musicDeviceOrEffect = BOOL nonatomic,readonly
+[objc-property] AUAudioUnit musicalContextBlock = AUHostMusicalContextBlock _Nullable copy,nonatomic,nullability,readwrite
+[objc-property] AUAudioUnit outputBusses = AUAudioUnitBusArray * _Nonnull nonatomic,readonly
+[objc-property] AUAudioUnit outputEnabled = BOOL assign,nonatomic,readwrite,unsafe_unretained
+[objc-property] AUAudioUnit outputProvider = AURenderPullInputBlock _Nullable copy,nonatomic,nullability,readwrite
+[objc-property] AUAudioUnit parameterTree = AUParameterTree * _Nullable nonatomic,nullability,readonly
+[objc-property] AUAudioUnit renderBlock = AURenderBlock _Nonnull nonatomic,readonly
+[objc-property] AUAudioUnit renderQuality = NSInteger assign,nonatomic,readwrite,unsafe_unretained
+[objc-property] AUAudioUnit renderResourcesAllocated = BOOL nonatomic,readonly
+[objc-property] AUAudioUnit renderingOffline = BOOL assign,nonatomic,readwrite,unsafe_unretained
+[objc-property] AUAudioUnit scheduleMIDIEventBlock = AUScheduleMIDIEventBlock _Nullable nonatomic,nullability,readonly
+[objc-property] AUAudioUnit scheduleParameterBlock = AUScheduleParameterBlock _Nonnull nonatomic,readonly
+[objc-property] AUAudioUnit shouldBypassEffect = BOOL assign,nonatomic,readwrite,unsafe_unretained
+[objc-property] AUAudioUnit supportsMPE = BOOL nonatomic,readonly
+[objc-property] AUAudioUnit tailTime = NSTimeInterval nonatomic,readonly
+[objc-property] AUAudioUnit transportStateBlock = AUHostTransportStateBlock _Nullable copy,nonatomic,nullability,readwrite
+[objc-property] AUAudioUnit virtualMIDICableCount = NSInteger nonatomic,readonly
+[objc-property] AUAudioUnitBus busType = AUAudioUnitBusType nonatomic,readonly
+[objc-property] AUAudioUnitBus contextPresentationLatency = NSTimeInterval assign,nonatomic,readwrite,unsafe_unretained
+[objc-property] AUAudioUnitBus enabled = BOOL assign,nonatomic,readwrite,unsafe_unretained
+[objc-property] AUAudioUnitBus format = AVAudioFormat * _Nonnull nonatomic,readonly
+[objc-property] AUAudioUnitBus index = NSUInteger nonatomic,readonly
+[objc-property] AUAudioUnitBus maximumChannelCount = AUAudioChannelCount assign,nonatomic,readwrite,unsafe_unretained
+[objc-property] AUAudioUnitBus name = NSString * _Nullable copy,nonatomic,nullability,readwrite
+[objc-property] AUAudioUnitBus ownerAudioUnit = AUAudioUnit * _Nonnull assign,nonatomic,readonly,unsafe_unretained
+[objc-property] AUAudioUnitBus supportedChannelCounts = NSArray<NSNumber *> * _Nullable nonatomic,nullability,readwrite,retain
+[objc-property] AUAudioUnitBus supportedChannelLayoutTags = NSArray<NSNumber *> * _Nullable copy,nonatomic,nullability,readonly
+[objc-property] AUAudioUnitBusArray busType = AUAudioUnitBusType nonatomic,readonly
+[objc-property] AUAudioUnitBusArray count = NSUInteger nonatomic,readonly
+[objc-property] AUAudioUnitBusArray countChangeable = BOOL nonatomic,readonly
+[objc-property] AUAudioUnitBusArray ownerAudioUnit = AUAudioUnit * _Nonnull assign,nonatomic,readonly,unsafe_unretained
+[objc-property] AUAudioUnitPreset name = NSString * _Nonnull copy,nonatomic,readwrite
+[objc-property] AUAudioUnitPreset number = NSInteger assign,nonatomic,readwrite,unsafe_unretained
+[objc-property] AUParameter address = AUParameterAddress nonatomic,readonly
+[objc-property] AUParameter dependentParameters = NSArray<NSNumber *> * _Nullable copy,nonatomic,nullability,readonly
+[objc-property] AUParameter flags = AudioUnitParameterOptions nonatomic,readonly
+[objc-property] AUParameter maxValue = AUValue nonatomic,readonly
+[objc-property] AUParameter minValue = AUValue nonatomic,readonly
+[objc-property] AUParameter unit = AudioUnitParameterUnit nonatomic,readonly
+[objc-property] AUParameter unitName = NSString * _Nullable copy,nonatomic,nullability,readonly
+[objc-property] AUParameter value = AUValue assign,nonatomic,readwrite,unsafe_unretained
+[objc-property] AUParameter valueStrings = NSArray<NSString *> * _Nullable copy,nonatomic,nullability,readonly
+[objc-property] AUParameterGroup allParameters = NSArray<AUParameter *> * _Nonnull nonatomic,readonly
+[objc-property] AUParameterGroup children = NSArray<AUParameterNode *> * _Nonnull nonatomic,readonly
+[objc-property] AUParameterNode displayName = NSString * _Nonnull copy,nonatomic,readonly
+[objc-property] AUParameterNode identifier = NSString * _Nonnull copy,nonatomic,readonly
+[objc-property] AUParameterNode implementorDisplayNameWithLengthCallback = AUImplementorDisplayNameWithLengthCallback _Nonnull copy,nonatomic,readwrite
+[objc-property] AUParameterNode implementorStringFromValueCallback = AUImplementorStringFromValueCallback _Nonnull copy,nonatomic,readwrite
+[objc-property] AUParameterNode implementorValueFromStringCallback = AUImplementorValueFromStringCallback _Nonnull copy,nonatomic,readwrite
+[objc-property] AUParameterNode implementorValueObserver = AUImplementorValueObserver _Nonnull copy,nonatomic,readwrite
+[objc-property] AUParameterNode implementorValueProvider = AUImplementorValueProvider _Nonnull copy,nonatomic,readwrite
+[objc-property] AUParameterNode keyPath = NSString * _Nonnull copy,nonatomic,readonly
+[objc-method] AUAudioUnit +instantiateWithComponentDescription:options:completionHandler: = void (AudioComponentDescription, AudioComponentInstantiationOptions, void (^ _Nonnull)(AUAudioUnit * _Nullable, NSError * _Nullable))
+[objc-method] AUAudioUnit +registerSubclass:asComponentDescription:name:version: = void (Class _Nonnull, AudioComponentDescription, NSString * _Nonnull, UInt32)
+[objc-method] AUAudioUnit -allocateRenderResourcesAndReturnError: = BOOL (NSError * _Nullable * _Nullable)
+[objc-method] AUAudioUnit -deallocateRenderResources = void ()
+[objc-method] AUAudioUnit -init = instancetype _Nonnull ()
+[objc-method] AUAudioUnit -initWithComponentDescription:error: = instancetype _Nullable (AudioComponentDescription, NSError * _Nullable * _Nullable)
+[objc-method] AUAudioUnit -initWithComponentDescription:options:error: = instancetype _Nullable (AudioComponentDescription, AudioComponentInstantiationOptions, NSError * _Nullable * _Nullable)
+[objc-method] AUAudioUnit -parametersForOverviewWithCount: = NSArray<NSNumber *> * _Nonnull (NSInteger)
+[objc-method] AUAudioUnit -removeRenderObserver: = void (NSInteger)
+[objc-method] AUAudioUnit -reset = void ()
+[objc-method] AUAudioUnit -setDeviceID:error: = BOOL (AudioObjectID, NSError * _Nullable * _Nullable)
+[objc-method] AUAudioUnit -setRenderResourcesAllocated: = void (BOOL)
+[objc-method] AUAudioUnit -shouldChangeToFormat:forBus: = BOOL (AVAudioFormat * _Nonnull, AUAudioUnitBus * _Nonnull)
+[objc-method] AUAudioUnit -startHardwareAndReturnError: = BOOL (NSError * _Nullable * _Nullable)
+[objc-method] AUAudioUnit -stopHardware = void ()
+[objc-method] AUAudioUnit -tokenByAddingRenderObserver: = NSInteger (AURenderObserver _Nonnull)
+[objc-method] AUAudioUnitBus -initWithFormat:error: = instancetype _Nullable (AVAudioFormat * _Nonnull, NSError * _Nullable * _Nullable)
+[objc-method] AUAudioUnitBus -setFormat:error: = BOOL (AVAudioFormat * _Nonnull, NSError * _Nullable * _Nullable)
+[objc-method] AUAudioUnitBusArray -addObserverToAllBusses:forKeyPath:options:context: = void (NSObject * _Nonnull, NSString * _Nonnull, NSKeyValueObservingOptions, void * _Nullable)
+[objc-method] AUAudioUnitBusArray -init = instancetype _Nonnull ()
+[objc-method] AUAudioUnitBusArray -initWithAudioUnit:busType: = instancetype _Nonnull (AUAudioUnit * _Nonnull, AUAudioUnitBusType)
+[objc-method] AUAudioUnitBusArray -initWithAudioUnit:busType:busses: = instancetype _Nonnull (AUAudioUnit * _Nonnull, AUAudioUnitBusType, NSArray<AUAudioUnitBus *> * _Nonnull)
+[objc-method] AUAudioUnitBusArray -objectAtIndexedSubscript: = AUAudioUnitBus * _Nonnull (NSUInteger)
+[objc-method] AUAudioUnitBusArray -removeObserverFromAllBusses:forKeyPath:context: = void (NSObject * _Nonnull, NSString * _Nonnull, void * _Nullable)
+[objc-method] AUAudioUnitBusArray -replaceBusses: = void (NSArray<AUAudioUnitBus *> * _Nonnull)
+[objc-method] AUAudioUnitBusArray -setBusCount:error: = BOOL (NSUInteger, NSError * _Nullable * _Nullable)
+[objc-method] AUParameter -setValue:originator: = void (AUValue, AUParameterObserverToken _Nullable)
+[objc-method] AUParameter -setValue:originator:atHostTime: = void (AUValue, AUParameterObserverToken _Nullable, uint64_t)
+[objc-method] AUParameter -setValue:originator:atHostTime:eventType: = void (AUValue, AUParameterObserverToken _Nullable, uint64_t, AUParameterAutomationEventType)
+[objc-method] AUParameter -stringFromValue: = NSString * _Nonnull (const AUValue * _Nullable)
+[objc-method] AUParameter -valueFromString: = AUValue (NSString * _Nonnull)
+[objc-method] AUParameterNode -displayNameWithLength: = NSString * _Nonnull (NSInteger)
+[objc-method] AUParameterNode -removeParameterObserver: = void (AUParameterObserverToken _Nonnull)
+[objc-method] AUParameterNode -tokenByAddingParameterAutomationObserver: = AUParameterObserverToken _Nonnull (AUParameterAutomationObserver _Nonnull)
+[objc-method] AUParameterNode -tokenByAddingParameterObserver: = AUParameterObserverToken _Nonnull (AUParameterObserver _Nonnull)
+[objc-method] AUParameterNode -tokenByAddingParameterRecordingObserver: = AUParameterObserverToken _Nonnull (AUParameterRecordingObserver _Nonnull)
+[objc-method] AUParameterTree +createGroupFromTemplate:identifier:name:addressOffset: = AUParameterGroup * _Nonnull (AUParameterGroup * _Nonnull, NSString * _Nonnull, NSString * _Nonnull, AUParameterAddress)
+[objc-method] AUParameterTree +createGroupTemplate: = AUParameterGroup * _Nonnull (NSArray<AUParameterNode *> * _Nonnull)
+[objc-method] AUParameterTree +createGroupWithIdentifier:name:children: = AUParameterGroup * _Nonnull (NSString * _Nonnull, NSString * _Nonnull, NSArray<AUParameterNode *> * _Nonnull)
+[objc-method] AUParameterTree +createParameterWithIdentifier:name:address:min:max:unit:unitName:flags:valueStrings:dependentParameters: = AUParameter * _Nonnull (NSString * _Nonnull, NSString * _Nonnull, AUParameterAddress, AUValue, AUValue, AudioUnitParameterUnit, NSString * _Nullable, AudioUnitParameterOptions, NSArray<NSString *> * _Nullable, NSArray<NSNumber *> * _Nullable)
+[objc-method] AUParameterTree +createTreeWithChildren: = AUParameterTree * _Nonnull (NSArray<AUParameterNode *> * _Nonnull)
+[objc-method] AUParameterTree -parameterWithAddress: = AUParameter * _Nullable (AUParameterAddress)
+[objc-method] AUParameterTree -parameterWithID:scope:element: = AUParameter * _Nullable (AudioUnitParameterID, AudioUnitScope, AudioUnitElement)

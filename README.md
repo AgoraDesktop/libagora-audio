@@ -15,8 +15,9 @@ or a prototype drifts. See [Provenance](#provenance) and `PROVENANCE.md`.
 
 ## Status
 
-**Phase 2 — the types, the clock, format queries, conversion, the three containers, and the device layer.**
-Measured on this machine, on the backend that exists everywhere.
+**Phase 5 complete — the types, the clock, format queries, conversion, the three containers, the device
+layer, the units and their graph, and AUv3's object surface over them.** Measured on this machine, on the
+backend that exists everywhere.
 
 ```
 libagora-audio/CoreAudio/
@@ -38,6 +39,9 @@ libagora-audio/AudioToolbox/
     AudioUnit.h          scopes, elements, properties and the pull
     AudioOutputUnit.h    starting a unit that emits audio
     AUGraph.h            units wired to each other
+    AUParameters.h       a parameter tree: nodes, groups, leaves, observers
+    AUAudioUnit.h        a unit as an object: busses, a render block, the hardware doors
+    AUAudioUnit_internal.h  what a bus asks its unit (not installed)
 HostTime.c               the host clock over clock_gettime(CLOCK_MONOTONIC)
 AudioFormat.c            the four properties answered, and the frame arithmetic behind them
 AudioResampler.c         the windowed-sinc, arbitrary-ratio interpolator
@@ -53,15 +57,36 @@ AudioQueue.c             buffers in, played frames out, over the device layer
 AudioServices.c          a file and a number; the alert is generated, not vendored
 AudioUnit.c              the registry of three, and the three units behind it
 AudioGraph.c             nodes, connections, and the pull that goes down them
-tools/refshim/           sixty lines of ours, so clang on Linux can parse Apple's headers
+AUParameters.m           the tree built from the C parameter table, and the write-through observers
+AUAudioUnit.m            the object face of a C unit: busses, blocks, the tree, the hardware doors
+tools/refshim/           a few hundred lines of ours, so clang on Linux can parse Apple's headers
+                         (Foundation's declarations are there only for the AUv3 parse)
 tools/api-manifest.py    generates tests/api/manifest-10.12.txt from a MacOSX10.12.sdk
-tests/api/               the four identity gates
+tests/api/               the five identity gates
 ```
 
-**Phase 4 — playback.** The device layer (two backends: `null` and ALSA), the buffered queue over it, and the
-system sounds including a generated alert tone. Still to come: `AudioUnit` and `AUGraph`, the PipeWire
-backend, and the `libagora-app` wiring (`NSSound`, `NSBeep`) that is the point of all of it.
-`../AUDIO-PLAN.md` §9 is the schedule and §6 the header-by-header commitment.
+**Phase 5b — AUv3, in process.** `AUAudioUnit`, `AUAudioUnitBus`, `AUAudioUnitBusArray`,
+`AUAudioUnitPreset` and the four `AUParameter` classes are `NSObject`s **over** the C units in `AudioUnit.c`,
+which is Apple's own answer for a v2 unit (their name for it is `AUAudioUnitV2Bridge`): a bus is
+`kAudioUnitProperty_ElementCount` and `StreamFormat`, `-renderBlock` is `AudioUnitRender`,
+`-startHardwareAndReturnError:` is `AudioOutputUnitStart`, and the parameter tree is
+`kAudioUnitProperty_ParameterList` plus `ParameterInfo`. Nothing is implemented twice, so nothing can
+disagree.
+
+Three things about this door are **not** Apple's, and each is stated where it is declared:
+
+- a bus's format is an `AudioStreamBasicDescription`, not an `AVAudioFormat *` — formats live in
+  AVFoundation on macOS and this library has no AVFoundation (`../AUDIO-PLAN.md` §5);
+- `AUParameterAddress` encodes the C coordinates — `scope << 32 | element << 16 | id` — because a v2
+  parameter is three numbers and an address is one;
+- the parameter classes do not claim `NSSecureCoding`, and `+instantiateWithComponentDescription:…` reports
+  an error instead of loading anything: the registry is three built-ins and there is no plug-in ABI, so
+  in-process is the only instantiation there is. App-extension hosting (`AUAudioUnitFactory`) is out of
+  scope, and the class is not declared — a name that cannot be loaded is worse than an absent one.
+
+Still to come: the PipeWire backend, `sndio`, the `AudioQueue` input side and timelines, `AUGraph`
+sub-graphs, and the rest of `AudioFormat`'s selectors. `../AUDIO-PLAN.md` §9 is the schedule and §6 the
+header-by-header commitment.
 
 The three containers are ours rather than a library's: WAV is a little-endian chunk list, AIFF is a
 big-endian one with an 80-bit sample rate, and CAF is a big-endian chunk list with a 64-bit size. A
@@ -81,8 +106,10 @@ unsupported-property error is `'pty?'`, not `'prop'`; and **10.12 has no
 `kAudioFilePropertyFileLengthFrames` at all** — for linear PCM the *packet* count is the frame count, and
 the constant this repository had invented was deleted rather than implemented.
 
-No audio library is linked yet, and none will be until the HAL: PipeWire, ALSA and sndio are the *device
-seam*, not the API, and they stay out of every public header.
+ALSA (and, when it lands, PipeWire) is the *device seam*, not the API: it is a PRIVATE link, so no type from
+it reaches a public header. Foundation is PUBLIC on the Objective-C doors for the same reason Core
+Foundation is — a client naming `AUAudioUnit` needs `NSObject` — and that is why this component sits above
+`libagora-base` in `release/components.conf`.
 
 ## How "identical to 10.12" is kept true
 
@@ -92,7 +119,8 @@ seam*, not the API, and they stay out of every public header.
 | `tests/api/macros.c` | a constant's value and the flag-decoding macro, checked by value at run time |
 | `tests/api/compile-cxx.cpp` | headers that only compile as C: `extern "C"`, the inline helpers Apple ships |
 | `tests/api/prototypes.c` | a changed parameter, a dropped `const`, a `UInt32 *` that became `UInt32` — 69 prototypes through pointers typed from the manifest |
-| `tests/api/manifest-10.12.txt` | the record itself: 81 records, 1839 enumeration constants, 235 typedefs, 243 prototypes |
+| `tests/api/objc.m` | the Objective-C surface: every class, and each property and method's qualified type, by `__builtin_types_compatible_p`. Built with `-Werror=objc-method-access`, so a *removed* declaration is a build failure too |
+| `tests/api/manifest-10.12.txt` | the record itself: 87 records, 1853 enumeration constants, 269 typedefs, 244 prototypes, 9 classes, 43 methods |
 
 The manifest is generated, never hand-edited:
 
@@ -110,7 +138,7 @@ manifest already holds every one of them.
 
 ## The suites
 
-`ctest` runs four, none of which needs a sound card, a session server, or anyone listening:
+`ctest` runs fourteen, none of which needs a sound card, a session server, or anyone listening:
 
 - **`api-layout`** — every public structure's size, alignment and field offsets against the manifest,
   including the two traps (`AudioBufferList` and `AudioChannelLayout` are variable-length: a client
@@ -120,6 +148,8 @@ manifest already holds every one of them.
   big-endian and non-PCM formats.
 - **`api-cxx`** — the same doors under `-std=c++17`, including `CalculateLPCMFlags` and the timestamp
   helpers.
+- **`api-objc`** — the class surface, compile-time, against the manifest's `[objc-class]`, `[objc-method]` and
+  `[objc-property]` records.
 - **`hosttime`** — the clock advances, never goes backwards, reports its own frequency, and the two
   conversions are inverses; a 20 ms sleep is at least 15 ms of host time and less than 5 s.
 - **`format`** — the frame arithmetic a non-interleaved description needs (one channel, not all of them),
@@ -142,6 +172,14 @@ manifest already holds every one of them.
 - **`queue`** — a buffer of 0.5 played through a refilling callback measures **0.5** at the device, **0.25**
   after the queue's volume is halved, **0.0** after a stop; a buffer enqueued twice is refused by name; and
   the system sounds are audible: a WAV loaded by URL, and the **generated** alert tone.
+- **`auv3`** — every assertion in pairs, because the object is a view of the C unit: the default output unit's
+  component description, name, one input bus and one output bus, the bus format **as the unit's own
+  `StreamFormat` property reports it**, a format written through the bus arriving at the C door, the maximum
+  slice, resources allocated, `-renderBlock` rendering silence through `AudioUnitRender`, hardware start and
+  stop on the null device. Then the mixer: two buses, four parameter nodes (**two ids over two elements**),
+  a write through the tree landing in `AudioUnitGetParameter`, an observer hearing the value the unit
+  clamped to, an originator not echoed, a removed observer going quiet, and the render block mixing **0.25 +
+  0.125 × 0.25 = 0.28125**. Then the refusal: out-of-process instantiation answers with nil and an error.
 - **`file`** — WAV, AIFF and CAF each written, closed, reopened and compared with `memcmp`: **bit-exact**,
   with the byte count, packet count, duration and data format checked separately; then `ExtAudioFile`
   converting int16 → float32 → int16 exactly, and a 44.1 kHz client writing a 48 kHz file, which lands
@@ -154,6 +192,7 @@ manifest already holds every one of them.
 ```sh
 cmake -S . -B build -DCMAKE_C_COMPILER=/usr/bin/clang-19 \
       -DCMAKE_CXX_COMPILER=/usr/bin/clang++-19 \
+      -DCMAKE_OBJC_COMPILER=/usr/bin/clang-19 \
       -DCMAKE_PREFIX_PATH=../build-prefix -DCMAKE_INSTALL_PREFIX=../build-prefix
 cmake --build build
 cd build && ctest --output-on-failure

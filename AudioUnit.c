@@ -359,11 +359,28 @@ static AudioStreamBasicDescription *fn_format_for(AudioComponentInstance unit, A
 	return NULL;
 }
 
+/* A unit's parameters are per (scope, id), and the element is what a *value* is set on — the mixer's Volume
+ * is one parameter and as many values as it has buses. That is why the list is two ids and the tree the AUv3
+ * door builds has one node per bus: the address carries the element, the id does not. */
+static UInt32 fn_parameter_count(AudioComponentInstance unit, AudioUnitScope scope)
+{
+	if (unit->kind != AGORA_UNIT_MIXER || scope != kAudioUnitScope_Input) {
+		return 0;
+	}
+	return 2;
+}
+
+static bool fn_parameter_id_is_known(AudioComponentInstance unit, AudioUnitScope scope, AudioUnitElement id)
+{
+	if (unit->kind != AGORA_UNIT_MIXER || scope != kAudioUnitScope_Input) {
+		return false;
+	}
+	return id == kMultiChannelMixerParam_Volume || id == kMultiChannelMixerParam_Enable;
+}
+
 OSStatus AudioUnitGetPropertyInfo(AudioUnit inUnit, AudioUnitPropertyID inID, AudioUnitScope inScope,
                                   AudioUnitElement inElement, UInt32 *outDataSize, Boolean *outWritable)
 {
-	(void)inElement;
-
 	if (inUnit == NULL) {
 		return kAudio_ParamError;
 	}
@@ -381,6 +398,12 @@ OSStatus AudioUnitGetPropertyInfo(AudioUnit inUnit, AudioUnitPropertyID inID, Au
 		if (outDataSize) { *outDataSize = sizeof(UInt32); }
 		if (outWritable) { *outWritable = (inUnit->kind == AGORA_UNIT_MIXER); }
 		return 0;
+	case kAudioUnitProperty_ParameterList:
+		if (outDataSize) { *outDataSize = fn_parameter_count(inUnit, inScope) * (UInt32)sizeof(AudioUnitParameterID); }
+		return 0;
+	case kAudioUnitProperty_ParameterInfo:
+		if (outDataSize) { *outDataSize = sizeof(AudioUnitParameterInfo); }
+		return fn_parameter_id_is_known(inUnit, inScope, inElement) ? 0 : kAudioUnitErr_InvalidParameter;
 	case kAudioUnitProperty_MaximumFramesPerSlice:
 		if (outDataSize) { *outDataSize = sizeof(UInt32); }
 		if (outWritable) { *outWritable = true; }
@@ -431,6 +454,52 @@ OSStatus AudioUnitGetProperty(AudioUnit inUnit, AudioUnitPropertyID inID, AudioU
 		*(UInt32 *)outData = inUnit->element_count;
 		*ioDataSize = sizeof(UInt32);
 		return 0;
+
+	case kAudioUnitProperty_ParameterList: {
+		UInt32 count = fn_parameter_count(inUnit, inScope);
+		UInt32 index = 0;
+
+		if (*ioDataSize < count * (UInt32)sizeof(AudioUnitParameterID)) {
+			return kAudioUnitErr_InvalidPropertyValue;
+		}
+		if (count > 0) {
+			AudioUnitParameterID *ids = outData;
+
+			ids[index++] = kMultiChannelMixerParam_Volume;
+			ids[index++] = kMultiChannelMixerParam_Enable;
+		}
+		*ioDataSize = index * (UInt32)sizeof(AudioUnitParameterID);
+		return 0;
+	}
+
+	case kAudioUnitProperty_ParameterInfo: {
+		AudioUnitParameterInfo *info = outData;
+
+		if (*ioDataSize < sizeof(AudioUnitParameterInfo)) {
+			return kAudioUnitErr_InvalidPropertyValue;
+		}
+		if (!fn_parameter_id_is_known(inUnit, inScope, inElement)) {
+			return kAudioUnitErr_InvalidParameter;
+		}
+
+		memset(info, 0, sizeof(*info));
+		info->flags = kAudioUnitParameterFlag_IsReadable | kAudioUnitParameterFlag_IsWritable;
+		if (inElement == kMultiChannelMixerParam_Volume) {
+			strncpy(info->name, "Volume", sizeof(info->name) - 1);
+			info->unit = kAudioUnitParameterUnit_LinearGain;
+			info->minValue = 0.0f;
+			info->maxValue = 1.0f;
+			info->defaultValue = 1.0f;
+		} else {
+			strncpy(info->name, "Enable", sizeof(info->name) - 1);
+			info->unit = kAudioUnitParameterUnit_Boolean;
+			info->minValue = 0.0f;
+			info->maxValue = 1.0f;
+			info->defaultValue = 1.0f;
+		}
+		*ioDataSize = sizeof(AudioUnitParameterInfo);
+		return 0;
+	}
 
 	case kAudioUnitProperty_MaximumFramesPerSlice:
 		if (*ioDataSize < sizeof(UInt32)) {

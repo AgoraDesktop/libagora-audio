@@ -203,6 +203,17 @@ int main(void)
 	         kAudioHardwareUnsupportedOperationError, 1970171760);
 	fn_check("kAudioDeviceTransportTypeVirtual", kAudioDeviceTransportTypeVirtual, 1986622068);
 
+	/* --- the parameter doors the AUv3 tree reads ---------------------------- */
+	fn_check("kAudioUnitProperty_ParameterList", kAudioUnitProperty_ParameterList, 3);
+	fn_check("kAudioUnitProperty_ParameterInfo", kAudioUnitProperty_ParameterInfo, 4);
+	fn_check("kAudioUnitParameterUnit_Generic", kAudioUnitParameterUnit_Generic, 0);
+	fn_check("kAudioUnitParameterUnit_Boolean", kAudioUnitParameterUnit_Boolean, 2);
+	fn_check("kAudioUnitParameterUnit_LinearGain", kAudioUnitParameterUnit_LinearGain, 14);
+	fn_check("kAudioUnitParameterUnit_CustomUnit", kAudioUnitParameterUnit_CustomUnit, 26);
+	fn_check("kAudioUnitParameterFlag_ValuesHaveStrings", kAudioUnitParameterFlag_ValuesHaveStrings, 2097152);
+	fn_check("kAudioUnitParameterFlag_IsReadable", kAudioUnitParameterFlag_IsReadable, 1073741824);
+	fn_check("kAudioUnitParameterFlag_IsWritable", kAudioUnitParameterFlag_IsWritable, 2147483648);
+
 	if (g_failures != 0) {
 		fprintf(stderr, "api-macros: %d failure(s)\n", g_failures);
 		return 1;

@@ -20,9 +20,28 @@ permission:
    field offsets; every enumeration constant's value; every typedef; every function's qualified type.
    `clang -fdump-record-layouts-complete` and `-ast-dump=json` produce them — we do not remember them, and
    two of the numbers in this repository would have been wrong if we had.
-3. **The claim is tested, not asserted.** `tests/api/layout.c`, `tests/api/macros.c` and
-   `tests/api/compile-cxx.cpp` fail on any drift. A size that changes without the manifest changing is a
-   build failure, which is the only way a promise like this survives a year of edits.
+3. **The claim is tested, not asserted.** `tests/api/layout.c`, `tests/api/macros.c`,
+   `tests/api/compile-cxx.cpp` and `tests/api/objc.m` fail on any drift — the last one for the Objective-C
+   doors, whose manifest records classes, superclasses, protocols, and the qualified type of every method and
+   property. A size that changes without the manifest changing is a build failure, which is the only way a
+   promise like this survives a year of edits.
+
+## The Objective-C doors, and the two things they do not claim
+
+`AUAudioUnit.h` and `AUParameters.h` are the same kind of transcription as the C ones, with two deliberate
+departures, both stated in the headers and in `README.md`:
+
+- **No `AVAudioFormat`.** A bus's format is an `AudioStreamBasicDescription`. `AVAudioFormat` is
+  AVFoundation's, and AVFoundation is explicitly not part of this component (`../AUDIO-PLAN.md` §5); an
+  opaque forward declaration would be a type a client could not construct, which is not a door.
+- **No `NSSecureCoding` on the parameter classes or the preset.** Apple's classes conform; there is no coder
+  here, and a conformance without `-encodeWithCoder:` is a promise the class cannot keep.
+
+Two headers Apple ships separately are folded in rather than omitted: the implementor-side declarations from
+`AUAudioUnitImplementation.h` (the value observer/provider pair and the `AUParameterTree` factory) live in
+`AUParameters.h`, because this library *implements* units and a client should not need a second include
+path. `AUAudioUnitFactory` and the app-extension doors are not declared at all: nothing here can load an
+extension, and a class that cannot be loaded is worse than an absent name.
 
 ## What is NOT in this repository
 
@@ -35,10 +54,13 @@ permission:
 
 ## `tools/refshim/`
 
-Sixty lines of ours — `TargetConditionals.h`, `Availability.h`, an empty `MacTypes.h`, Core Foundation's
-*types* only, dispatch's *types* only, and two `mach` stubs — which exist so the generator can run on
-Linux, where a Mac is not required to read a header. They are not part of the library, are never
-installed, and are not Apple's code: each file says so at its top.
+A few hundred lines of ours — `TargetConditionals.h`, `Availability.h`, an empty `MacTypes.h`, Core
+Foundation's *types* only, dispatch's *types* only, two `mach` stubs, and Foundation's *declarations* only
+(`NSObject`, `NSString`, `NSArray`, `NSError`, the `NS_*` macros) because `AUParameters.h` imports Foundation
+and the reference parse must depend on nothing in this tree. They exist so the generator can run on Linux,
+where a Mac is not required to read a header. They are not part of the library, are never installed, and are
+not Apple's code: each file says so at its top. The library's own build uses the real Foundation from
+`build-prefix`.
 
 The one thing a shim cannot fix is that Darwin's `__nonnull` is glibc's *function attribute* macro of the
 same name, so the generator rewrites that spelling in its scratch copy. That is a fact about libc, not a
