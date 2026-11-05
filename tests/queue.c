@@ -243,6 +243,38 @@ static void fn_test_queue(void)
 	fn_agora_audio_test_peaks(device, &peak, NULL);
 	fn_check("a stopped queue leaves the device silent", peak == 0.0f);
 
+	/* **A STOP LEAVES THE QUEUE HOLDING ITS BUFFERS, AND THAT IS THE CONTRACT A SECOND PLAY DEPENDS ON.** Apple's
+	 * `AudioQueueStop(immediate)` discards what it was playing, but this queue keeps `current` and `pending` until
+	 * somebody flushes — so a client that stops and then re-fills the buffers it allocated is REFUSED, and the queue
+	 * starts with fewer buffers than it needs. MEASURED from Amp: its second play of a file ran staccato because one
+	 * of its three buffers would not go back in. `AudioQueueFlush` is the door, and these two checks are what make
+	 * that a property rather than a workaround. */
+	/* **A SECOND PLAY IS THE SAME AS THE FIRST, AND THAT IS THE PROPERTY A PLAYER NEEDS.** A stopped queue returns its
+	 * buffers, so a client that stops and starts again re-enqueues them; the callbacks that follow must arrive at the
+	 * same rate as the first time, because the alternative — a queue that plays but only ever has one buffer in
+	 * rotation — is audible as staccato. MEASURED from Amp: its second press of play did exactly that, because in this
+	 * tree `AudioQueuePause` is `AudioQueueStop(immediate)`, so a resumed queue holds nothing until it is primed. */
+	{
+		UInt32 again = 0;
+		UInt32 i;
+		UInt32 before = state.calls;
+
+		/* **A STOP RETURNS SOME OF THEM AND NOT OTHERS**: what it was playing when it stopped is still `current`, so
+		 * the client cannot tell which of its own buffers are free. A FLUSH is the door that makes the set whole again,
+		 * and that is what a player does before it re-arms. */
+		(void)AudioQueueEnqueueBuffer(queue, first, 0, NULL);
+		fn_check("a flush returns every buffer to the client", AudioQueueFlush(queue) == 0
+		         && AudioQueueEnqueueBuffer(queue, first, 0, NULL) == 0
+		         && AudioQueueEnqueueBuffer(queue, second, 0, NULL) == 0);
+		fn_check("and starts again", AudioQueueStart(queue, NULL) == 0);
+		fn_sleep_ms(600);
+		again = state.calls - before;
+		printf("  (note: %u callback(s) in the 600 ms after the second start)\n", (unsigned)again);
+		fn_check("the second start keeps every buffer in rotation", again >= 2);
+		fn_agora_audio_test_peaks(device, &peak, NULL);
+		fn_check("and the device is playing again", peak > 0.0f);
+	}
+
 	fn_check("the queue is disposed", AudioQueueDispose(queue, true) == 0);
 }
 
