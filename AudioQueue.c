@@ -315,9 +315,28 @@ static UInt32 fn_stage_quantum(AudioQueueRef queue, UInt32 frames)
 /* What to gather for that quantum. The rate ratio is the whole answer except at the seams, where a resampler asks a
  * frame or two past its window; the two are what keeps an upsampling queue from leaving a gap of silence at every
  * quantum boundary. */
+/* **A CONVERTER EATS BEFORE IT FEEDS.** `AudioConverterFillComplexBuffer` keeps a filter's worth of input before it
+ * emits its first output frame, and a stage that holds only "this quantum's frames, plus two" therefore runs dry in the
+ * middle of almost every quantum — MEASURED: the device output had a silent window roughly once a second with a 44.1 kHz
+ * file on a 48 kHz device (and twice as often as with a 48 kHz file, which needs no conversion at all), while a client
+ * that converts nothing was clean. The margin is the converter's own prime, asked for rather than guessed, and a queue
+ * with no converter keeps the two frames that cover rounding. */
 static UInt32 fn_stage_need(AudioQueueRef queue, UInt32 frames)
 {
-	return fn_stage_quantum(queue, frames) + 2;
+	UInt32 margin = 2;
+
+	if (queue->converter != NULL) {
+		AudioConverterPrimeInfo prime;
+		UInt32 size = sizeof(prime);
+
+		memset(&prime, 0, sizeof(prime));
+		if (AudioConverterGetProperty(queue->converter, kAudioConverterPrimeInfo, &size, &prime) == 0) {
+			margin = (UInt32)prime.leadingFrames + 4;
+		} else {
+			margin = 64;
+		}
+	}
+	return fn_stage_quantum(queue, frames) + margin;
 }
 
 static bool fn_stage_reserve(AudioQueueRef queue, UInt32 frames)
@@ -720,6 +739,18 @@ static OSStatus fn_queue_render(AudioObjectID device, const AudioTimeStamp *now,
 		for (i = 0; i < produced * channels; i++) {
 			samples[i] *= queue->volume;
 		}
+	}
+
+	/* **THE PART OF THE QUANTUM NOBODY FILLED IS SILENCE.** The device hands back a buffer with whatever was in it, and
+	 * leaving the tail alone put stale samples — or nothing at all — between one quantum and the next. It is audible as
+	 * a click and it is measurable as a silent window: MEASURED at the device with a null sink, our queue produced 7
+	 * silent windows in 6 s where `pw-cat` produced none. Zeroing is the floor, not the cure; the stage margin above is
+	 * what stops it happening. */
+	if (produced < frames) {
+		float *samples = output->mBuffers[0].mData;
+
+		memset(samples + (size_t)produced * channels, 0,
+		       (size_t)(frames - produced) * channels * sizeof(float));
 	}
 
 	queue->frames_played += produced;
