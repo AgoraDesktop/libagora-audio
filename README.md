@@ -306,11 +306,14 @@ $ readelf -d build-prefix/lib/libagora-audio.so | grep -E 'NEEDED|RUNPATH'
 The manifest is generated, never hand-edited:
 
 ```sh
-MacOSX10.12.sdk=/path/to/MacOSX10.12.sdk          # Apple's text; never committed
-tools/api-manifest.py --sdk "$MacOSX10.12.sdk" --scratch /tmp/agora-api-stage \
+tools/fetch-sdk.py --out /tmp/refsdk              # Apple's text; never committed
+tools/api-manifest.py --sdk /tmp/refsdk --scratch /tmp/agora-api-stage \
     --out tests/api/manifest-10.12.txt \
     CoreAudio/CoreAudioTypes.h CoreAudio/HostTime.h
 ```
+
+`tools/fetch-sdk.py` is the procedure as a command rather than as prose — the four framework header trees, from the
+`phracker/MacOSX-SDKs` raw tree, buffered so a throttled run cannot leave a directory that looks staged.
 
 **`--scratch` is what makes a regeneration a diff about the API.** A record's field types are written down with the
 file they were read from, so a `mkdtemp` staging directory rewrites those lines on every run — a diff that says nothing
