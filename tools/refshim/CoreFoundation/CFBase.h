@@ -37,10 +37,29 @@ typedef unsigned int FourCharCode;
 typedef FourCharCode OSType;
 typedef float Float32;
 typedef double Float64;
+/* Classic MacTypes vocabulary, which the MIDI-adjacent headers still use for counts. */
+typedef signed char SignedByte;
+typedef unsigned long ItemCount;
+typedef unsigned long ByteCount;
+typedef unsigned long ByteOffset;
+typedef unsigned long UniCharCount;
 
 typedef long CFIndex;
 typedef double CFTimeInterval;
 typedef double CFAbsoluteTime;
+/** Apple's `CF_INLINE`: a `static inline` that is always inlined. Two `MusicPlayer.h` helpers are written with it, and a
+ * header that uses the word without it is a declaration that cannot be read. */
+/* Implicit-bridging and Swift-availability annotations: they say nothing to a C parse. */
+#define CF_IMPLICIT_BRIDGING_ENABLED
+#define CF_IMPLICIT_BRIDGING_DISABLED
+#define CF_SWIFT_UNAVAILABLE(...)
+#define CF_REFINED_FOR_SWIFT
+#define CF_SWIFT_NAME(...)
+
+#ifndef CF_INLINE
+#define CF_INLINE static inline __attribute__((always_inline))
+#endif
+
 typedef const void *CFTypeRef;
 typedef const struct __CFString *CFStringRef;
 typedef struct __CFString *CFMutableStringRef;

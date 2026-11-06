@@ -21,4 +21,12 @@
 #define __OSX_AVAILABLE_BUT_DEPRECATED(...)
 #define __OSX_AVAILABLE(...)
 #define __IOS_AVAILABLE(...)
+/* The "not on this platform" decorators: Apple's headers use them as a trailing token, so they have to expand to
+ * something (nothing) rather than be absent — an absent macro is a declaration that does not parse. */
+#define __WATCHOS_PROHIBITED
+#define __TVOS_PROHIBITED
+#define __WATCHOS_UNAVAILABLE
+#define __TVOS_UNAVAILABLE
+#define __IOS_PROHIBITED
+#define __OSX_UNAVAILABLE
 #endif

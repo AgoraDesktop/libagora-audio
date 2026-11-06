@@ -301,16 +301,20 @@ $ readelf -d build-prefix/lib/libagora-audio.so | grep -E 'NEEDED|RUNPATH'
 | `tests/api/compile-cxx.cpp` | headers that only compile as C: `extern "C"`, the inline helpers Apple ships |
 | `tests/api/prototypes.c` | a changed parameter, a dropped `const`, a `UInt32 *` that became `UInt32` — 69 prototypes through pointers typed from the manifest |
 | `tests/api/objc.m` | the Objective-C surface: every class, and each property and method's qualified type, by `__builtin_types_compatible_p`. Built with `-Werror=objc-method-access`, so a *removed* declaration is a build failure too |
-| `tests/api/manifest-10.12.txt` | the record itself: 87 records, 1853 enumeration constants, 269 typedefs, 244 prototypes, 9 classes, 43 methods |
+| `tests/api/manifest-10.12.txt` | the record itself: 87 records, 1853 enumeration constants, 269 typedefs, **250** prototypes, 9 classes, 43 methods |
 
 The manifest is generated, never hand-edited:
 
 ```sh
 MacOSX10.12.sdk=/path/to/MacOSX10.12.sdk          # Apple's text; never committed
-tools/api-manifest.py --sdk "$MacOSX10.12.sdk" \
+tools/api-manifest.py --sdk "$MacOSX10.12.sdk" --scratch /tmp/agora-api-stage \
     --out tests/api/manifest-10.12.txt \
     CoreAudio/CoreAudioTypes.h CoreAudio/HostTime.h
 ```
+
+**`--scratch` is what makes a regeneration a diff about the API.** A record's field types are written down with the
+file they were read from, so a `mkdtemp` staging directory rewrites those lines on every run — a diff that says nothing
+and hides the ones that do. Naming the directory makes the same input produce the same file, byte for byte.
 
 **Behaviour is graded, and `../AUDIO-PLAN.md` §1.3 says how.** A declaration that exists and refuses with
 the documented status is honest; a missing symbol is not. `CoreAudioTypes.h` therefore carries the part of

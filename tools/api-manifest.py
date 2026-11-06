@@ -246,10 +246,19 @@ def main():
     parser.add_argument("--sdk", required=True)
     parser.add_argument("--out", default="-")
     parser.add_argument("--refshim", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "refshim"))
+    # **THE SCRATCH DIRECTORY IS AN ARGUMENT BECAUSE ITS PATH IS IN THE OUTPUT.** A record's field types are recorded
+    # with the file they were read from, so a `mkdtemp` name makes every regeneration rewrite those lines — a diff
+    # that says nothing and hides the ones that do. Passing the same directory twice makes the manifest reproducible.
+    parser.add_argument("--scratch", default=None,
+                        help="put the staged copy here instead of a fresh temporary directory")
     parser.add_argument("headers", nargs="+")
     args = parser.parse_args()
 
-    work = tempfile.mkdtemp(prefix="agora-api-")
+    work = args.scratch if args.scratch is not None else tempfile.mkdtemp(prefix="agora-api-")
+    if args.scratch is not None:
+        if os.path.isdir(work):
+            shutil.rmtree(work)
+        os.makedirs(work)
     try:
         stage_dir = os.path.join(work, "stage")
         os.makedirs(stage_dir)
@@ -341,7 +350,9 @@ def main():
                                  len(found), len(constants), len(typedefs), len(functions),
                                  len(classes), len(methods), args.out))
     finally:
-        shutil.rmtree(work, ignore_errors=True)
+        # A caller who named the scratch directory keeps it: a staged copy is what a surprising diff gets read against.
+        if args.scratch is None:
+            shutil.rmtree(work, ignore_errors=True)
 
 
 if __name__ == "__main__":
